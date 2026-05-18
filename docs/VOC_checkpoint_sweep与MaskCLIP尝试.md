@@ -77,3 +77,13 @@ outputs/voc_maskclip_subset_100x200/
 2. 下游框架：论文主结果包含 Vanilla CLIP、MaskCLIP、SCLIP、ClearCLIP 等成熟 dense prediction 推理框架，当前只有直接 patch matching 和一个失败的近似 MaskCLIP 尝试。
 
 因此最优先的路线已经调整为：完整 ImageNet 作者设置训练 -> 等 checkpoint 产生 -> 用 vanilla VOC2012 先评估 -> 再接入更可靠的 MaskCLIP/SCLIP 评估。
+
+## SCLIP 接入状态
+
+当前已经在 `scripts/evaluate_voc_zero_shot_seg.py` 中加入 `--dense-mode sclip`，并新增：
+
+```text
+scripts/run_voc_sclip_eval.sh
+```
+
+这个实现参考 SCLIP 的 self-correlation attention 思路，在最后一层 ViT block 中用 `q-q` 与 `k-k` 自相关注意力替代标准 `q-k` 注意力，用于获得更适合 dense prediction 的 patch token。它目前属于“更接近论文下游框架的评估入口”，还没有在完整 ImageNet checkpoint 上实测。

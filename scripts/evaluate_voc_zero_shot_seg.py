@@ -60,10 +60,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-vis", type=int, default=12)
     parser.add_argument(
         "--dense-mode",
-        choices=["vanilla", "maskclip"],
+        choices=["vanilla", "maskclip", "sclip"],
         default="vanilla",
         help="Dense visual feature extraction mode. vanilla uses final ViT patch tokens; "
-        "maskclip uses value embeddings from the last self-attention block.",
+        "maskclip uses value embeddings from the last self-attention block; "
+        "sclip uses self-correlation attention in the last block.",
     )
     return parser.parse_args()
 
@@ -179,6 +180,75 @@ def encode_maskclip_value_tokens(visual: nn.Module, images: torch.Tensor) -> tor
     return values[:, 1:]
 
 
+def apply_layer_scale(block: nn.Module, name: str, x: torch.Tensor) -> torch.Tensor:
+    layer_scale = getattr(block, name, None)
+    if layer_scale is None:
+        return x
+    return layer_scale(x)
+
+
+def self_correlation_attention(block: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    attn = block.attn
+    qkv = F.linear(x, attn.in_proj_weight, attn.in_proj_bias)
+    q, k, v = qkv.chunk(3, dim=-1)
+
+    batch_size, token_count, embed_dim = q.shape
+    num_heads = attn.num_heads
+    head_dim = embed_dim // num_heads
+
+    def reshape_heads(tensor: torch.Tensor) -> torch.Tensor:
+        tensor = tensor.reshape(batch_size, token_count, num_heads, head_dim)
+        return tensor.permute(0, 2, 1, 3).reshape(batch_size * num_heads, token_count, head_dim)
+
+    q = reshape_heads(q)
+    k = reshape_heads(k)
+    v = reshape_heads(v)
+
+    scale = head_dim ** -0.5
+    q_attn = torch.softmax(torch.bmm(q, q.transpose(1, 2)) * scale, dim=-1)
+    k_attn = torch.softmax(torch.bmm(k, k.transpose(1, 2)) * scale, dim=-1)
+    out = torch.bmm(q_attn + k_attn, v)
+    out = out.reshape(batch_size, num_heads, token_count, head_dim)
+    out = out.permute(0, 2, 1, 3).reshape(batch_size, token_count, embed_dim)
+    return attn.out_proj(out)
+
+
+@torch.no_grad()
+def encode_sclip_tokens(visual: nn.Module, images: torch.Tensor) -> torch.Tensor:
+    """Approximate SCLIP dense features using self-correlation attention.
+
+    SCLIP replaces the final ViT block attention map with self-correlation
+    attention to improve dense patch-text alignment while keeping CLIP weights.
+    """
+    x = visual.conv1(images)
+    grid_size = (x.shape[2], x.shape[3])
+    x = x.reshape(x.shape[0], x.shape[1], -1)
+    x = x.permute(0, 2, 1)
+
+    cls_embedding = visual.class_embedding.to(x.dtype)
+    cls_tokens = cls_embedding + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)
+    x = torch.cat([cls_tokens, x], dim=1)
+    positional_embedding = resize_positional_embedding(visual.positional_embedding, grid_size)
+    x = x + positional_embedding.to(dtype=x.dtype, device=x.device)
+    if hasattr(visual, "patch_dropout"):
+        x = visual.patch_dropout(x)
+
+    x = visual.ln_pre(x)
+    blocks = visual.transformer.resblocks
+    for block in blocks[:-1]:
+        x = block(x)
+
+    last = blocks[-1]
+    attn_out = self_correlation_attention(last, last.ln_1(x))
+    x = x + apply_layer_scale(last, "ls_1", attn_out)
+    x = x + apply_layer_scale(last, "ls_2", last.mlp(last.ln_2(x)))
+    x = visual.ln_post(x)
+
+    if visual.proj is not None:
+        x = x @ visual.proj
+    return x[:, 1:]
+
+
 @torch.no_grad()
 def predict_mask(
     model: nn.Module,
@@ -191,6 +261,8 @@ def predict_mask(
     image = image.unsqueeze(0).to(device)
     if dense_mode == "maskclip":
         patches = encode_maskclip_value_tokens(model.visual, image)
+    elif dense_mode == "sclip":
+        patches = encode_sclip_tokens(model.visual, image)
     else:
         _, patches = encode_visual_tokens(model.visual, image)
     patches = F.normalize(patches.float(), dim=-1)

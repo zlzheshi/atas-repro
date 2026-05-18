@@ -267,6 +267,7 @@ configs/atas_vitb_imagenet_full_author.yaml
 - 训练日志：`/mnt/t1b6/xuzhejia/logs/atas_full_author_wait.log`。
 - 输出目录：`outputs/atas_vitb_imagenet_full_author/`。
 - checkpoint 产生后，将优先运行 `scripts/run_voc_full_author_sweep.sh` 做 VOC2012 vanilla 评估。
+- 同时已预留 `scripts/run_voc_sclip_eval.sh`，用于后续做更接近论文下游框架的 SCLIP 风格评估。
 
 同时，已经完成子集 checkpoint 的 VOC sweep。结果显示 epoch 1 到 epoch 6 均未超过 OpenCLIP baseline，且后续 epoch 在 VOC dense proxy 上逐步下降。这说明问题更可能来自训练规模和下游评估框架，而不是单纯训练轮数不足。
 

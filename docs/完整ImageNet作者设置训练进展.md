@@ -85,3 +85,21 @@ outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt
 4. 更可靠的 MaskCLIP/SCLIP 评估接入。
 
 短期最关键指标是 VOC2012 vanilla mIoU。作者论文中 Vanilla CLIP baseline 为 41.8 mIoU，ATAS 为 56.0 mIoU；我们当前 OpenCLIP baseline 为 40.16 mIoU，具有可比性。完整 ImageNet checkpoint 是否能显著超过 40.16，是判断复现是否向论文主结果靠近的核心。
+
+## 已准备的后续评估脚本
+
+完整 ImageNet checkpoint 产生后，可以直接运行：
+
+```bash
+GPU=3 bash scripts/run_voc_full_author_sweep.sh
+```
+
+这会对 baseline 和已有完整 ImageNet checkpoint 做 vanilla VOC2012 sweep。
+
+同时已经预留 SCLIP 风格 dense-mode：
+
+```bash
+GPU=3 bash scripts/run_voc_sclip_eval.sh
+```
+
+该脚本参考 SCLIP 的 self-correlation attention 思路，在最后一层 ViT block 使用 `q-q` 与 `k-k` 自相关注意力做 dense patch 表征。它比当前失败的 MaskCLIP 近似更接近论文中使用的成熟 dense prediction 路线，但仍需要等 GPU 空闲后用 VOC2012 实测确认。

@@ -40,6 +40,7 @@ outputs/atas_*/
 outputs/**/confusion.pt
 outputs/voc_*sweep*/**/visualizations/
 outputs/voc_maskclip_subset_100x200/**/visualizations/
+outputs/voc_sclip_*/**/visualizations/
 
 # OS and editor files
 .DS_Store
