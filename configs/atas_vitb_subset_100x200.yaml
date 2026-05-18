@@ -1,0 +1,26 @@
+model:
+  name: ViT-B-16
+  pretrained: /mnt/t1b6/xuzhejia/checkpoints/open_clip/open_clip_pytorch_model.bin
+
+data:
+  global_image_size: 224
+  image_size: 960
+  mosaic_choices: [2, 4, 6]
+  num_workers: 8
+
+training:
+  epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 9
+  learning_rate: 0.00001
+  weight_decay: 0.1
+  temperature: 1.0
+  lambda_gld: 1.0
+  lambda_lld: 0.01
+  lambda_ggd: 1.0
+  max_lld_patches: 1024
+  amp: true
+  log_interval: 20
+  save_interval: 1
+  output_dir: outputs/atas_vitb_subset_100x200
+

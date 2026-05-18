@@ -1,0 +1,47 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+
+# Large datasets and archives
+data/
+dataset/
+datasets/
+*.tar
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# Model weights and binary checkpoints
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+
+# Training logs and external experiment trackers
+logs/
+runs/
+wandb/
+tensorboard/
+
+# Bulky training output directories. Lightweight metric JSON/CSV/PNG outputs
+# already copied into outputs/ remain tracked unless they match the patterns above.
+outputs/atas_*/
+outputs/**/confusion.pt
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

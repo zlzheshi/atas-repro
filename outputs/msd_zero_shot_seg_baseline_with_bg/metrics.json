@@ -1,0 +1,14 @@
+{
+  "model": "openclip_baseline",
+  "miou": 0.1623421013355255,
+  "pixel_acc": 0.6470471024513245,
+  "foreground_miou": 0.0006498231668956578,
+  "foreground_pixel_acc": 0.052390988916158676,
+  "mean_class_acc": 0.19693244993686676,
+  "class_iou": {
+    "clean phone screen background": 0.6474189162254333,
+    "oil stain": 0.0016253467183560133,
+    "stain": 0.00013836158905178308,
+    "scratch": 0.00018576110596768558
+  }
+}

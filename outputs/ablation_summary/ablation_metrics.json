@@ -1,0 +1,42 @@
+[
+  {
+    "run": "OpenCLIP baseline",
+    "model": "openclip_baseline",
+    "top1_knn": 0.89,
+    "top5_neighbor_hit": 0.96525,
+    "mean_top1_similarity": 0.8730416107177734,
+    "mean_own_centroid_similarity": 0.8601768817603588,
+    "mean_nearest_other_centroid_similarity": 0.7844777931720018,
+    "centroid_margin": 0.07569908858835697
+  },
+  {
+    "run": "Full ATAS",
+    "model": "atas_checkpoint_epoch_3",
+    "top1_knn": 0.89125,
+    "top5_neighbor_hit": 0.96175,
+    "mean_top1_similarity": 0.7422415237426758,
+    "mean_own_centroid_similarity": 0.6733506700992584,
+    "mean_nearest_other_centroid_similarity": 0.44945250045135615,
+    "centroid_margin": 0.22389816964790224
+  },
+  {
+    "run": "GLD only",
+    "model": "atas_checkpoint_epoch_3",
+    "top1_knn": 0.24125,
+    "top5_neighbor_hit": 0.507,
+    "mean_top1_similarity": 0.9700600128173829,
+    "mean_own_centroid_similarity": 0.9479393519461154,
+    "mean_nearest_other_centroid_similarity": 0.954870320096612,
+    "centroid_margin": -0.0069309681504964825
+  },
+  {
+    "run": "GLD + LLD",
+    "model": "atas_checkpoint_epoch_3",
+    "top1_knn": 0.21175,
+    "top5_neighbor_hit": 0.45425,
+    "mean_top1_similarity": 0.9485801239013671,
+    "mean_own_centroid_similarity": 0.9021860198844224,
+    "mean_nearest_other_centroid_similarity": 0.9174323499202728,
+    "centroid_margin": -0.015246330035850405
+  }
+]

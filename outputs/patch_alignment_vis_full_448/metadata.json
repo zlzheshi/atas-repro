@@ -1,0 +1,74 @@
+[
+  {
+    "file": "patch_alignment_00_n02804610.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n02804610/n02804610_6606.JPEG",
+    "class": "n02804610",
+    "query": "image CLS",
+    "baseline_mean": 0.5652522444725037,
+    "atas_mean": 0.5836359858512878,
+    "delta_mean": 0.01838373951613903
+  },
+  {
+    "file": "patch_alignment_01_n02480495.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n02480495/n02480495_7678.JPEG",
+    "class": "n02480495",
+    "query": "image CLS",
+    "baseline_mean": 0.590458869934082,
+    "atas_mean": 0.47254449129104614,
+    "delta_mean": -0.11791433393955231
+  },
+  {
+    "file": "patch_alignment_02_n11879895.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n11879895/n11879895_9669.JPEG",
+    "class": "n11879895",
+    "query": "image CLS",
+    "baseline_mean": 0.6021464467048645,
+    "atas_mean": 0.5592367649078369,
+    "delta_mean": -0.04290962219238281
+  },
+  {
+    "file": "patch_alignment_03_n04509417.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n04509417/n04509417_542.JPEG",
+    "class": "n04509417",
+    "query": "image CLS",
+    "baseline_mean": 0.5477492809295654,
+    "atas_mean": 0.517081618309021,
+    "delta_mean": -0.030667727813124657
+  },
+  {
+    "file": "patch_alignment_04_n04325704.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n04325704/n04325704_31247.JPEG",
+    "class": "n04325704",
+    "query": "image CLS",
+    "baseline_mean": 0.5650875568389893,
+    "atas_mean": 0.5493014454841614,
+    "delta_mean": -0.015786046162247658
+  },
+  {
+    "file": "patch_alignment_05_n04456115.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n04456115/n04456115_22259.JPEG",
+    "class": "n04456115",
+    "query": "image CLS",
+    "baseline_mean": 0.6553609371185303,
+    "atas_mean": 0.5533042550086975,
+    "delta_mean": -0.10205666720867157
+  },
+  {
+    "file": "patch_alignment_06_n02276258.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n02276258/n02276258_8282.JPEG",
+    "class": "n02276258",
+    "query": "image CLS",
+    "baseline_mean": 0.5671463012695312,
+    "atas_mean": 0.5376706123352051,
+    "delta_mean": -0.0294757429510355
+  },
+  {
+    "file": "patch_alignment_07_n07802026.png",
+    "source_image": "/mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train/n07802026/n07802026_759.JPEG",
+    "class": "n07802026",
+    "query": "image CLS",
+    "baseline_mean": 0.5666137933731079,
+    "atas_mean": 0.5033159255981445,
+    "delta_mean": -0.06329791247844696
+  }
+]

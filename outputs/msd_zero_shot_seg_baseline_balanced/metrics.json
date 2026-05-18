@@ -1,0 +1,13 @@
+{
+  "model": "openclip_baseline",
+  "miou": 0.09400057792663574,
+  "pixel_acc": 0.20585878193378448,
+  "foreground_miou": 0.09400057792663574,
+  "foreground_pixel_acc": 0.20585878193378448,
+  "mean_class_acc": 0.31425008177757263,
+  "class_iou": {
+    "oil stain": 0.18085439503192902,
+    "stain": 0.03377849608659744,
+    "scratch": 0.06736885011196136
+  }
+}
