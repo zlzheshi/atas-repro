@@ -15,7 +15,7 @@ from torchvision.transforms import InterpolationMode, Normalize, ToTensor
 from torchvision.transforms import functional as TF
 from tqdm import tqdm
 
-from train_atas import encode_visual_tokens
+from train_atas import encode_visual_tokens, resize_positional_embedding
 
 
 VOC_CLASSES = [
@@ -58,6 +58,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.01)
     parser.add_argument("--save-vis", type=int, default=12)
+    parser.add_argument(
+        "--dense-mode",
+        choices=["vanilla", "maskclip"],
+        default="vanilla",
+        help="Dense visual feature extraction mode. vanilla uses final ViT patch tokens; "
+        "maskclip uses value embeddings from the last self-attention block.",
+    )
     return parser.parse_args()
 
 
@@ -132,15 +139,60 @@ def preprocess_pair(image_path: Path, mask_path: Path, image_size: int) -> tuple
 
 
 @torch.no_grad()
+def encode_maskclip_value_tokens(visual: nn.Module, images: torch.Tensor) -> torch.Tensor:
+    """Approximate MaskCLIP dense features from the last attention value branch.
+
+    MaskCLIP-style zero-shot segmentation extracts value embeddings from the
+    final self-attention block instead of using the final CLS-pooled CLIP output.
+    This keeps more spatial detail for patch-text matching.
+    """
+    x = visual.conv1(images)
+    grid_size = (x.shape[2], x.shape[3])
+    x = x.reshape(x.shape[0], x.shape[1], -1)
+    x = x.permute(0, 2, 1)
+
+    cls_embedding = visual.class_embedding.to(x.dtype)
+    cls_tokens = cls_embedding + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)
+    x = torch.cat([cls_tokens, x], dim=1)
+    positional_embedding = resize_positional_embedding(visual.positional_embedding, grid_size)
+    x = x + positional_embedding.to(dtype=x.dtype, device=x.device)
+    if hasattr(visual, "patch_dropout"):
+        x = visual.patch_dropout(x)
+
+    x = visual.ln_pre(x)
+    blocks = visual.transformer.resblocks
+    for block in blocks[:-1]:
+        x = block(x)
+
+    last = blocks[-1]
+    value_input = last.ln_1(x)
+    embed_dim = last.attn.embed_dim
+    value_weight = last.attn.in_proj_weight[2 * embed_dim :]
+    value_bias = None
+    if last.attn.in_proj_bias is not None:
+        value_bias = last.attn.in_proj_bias[2 * embed_dim :]
+    values = F.linear(value_input, value_weight, value_bias)
+    values = visual.ln_post(values)
+
+    if visual.proj is not None:
+        values = values @ visual.proj
+    return values[:, 1:]
+
+
+@torch.no_grad()
 def predict_mask(
     model: nn.Module,
     image: torch.Tensor,
     text_features: torch.Tensor,
     device: torch.device,
     temperature: float,
+    dense_mode: str,
 ) -> torch.Tensor:
     image = image.unsqueeze(0).to(device)
-    _, patches = encode_visual_tokens(model.visual, image)
+    if dense_mode == "maskclip":
+        patches = encode_maskclip_value_tokens(model.visual, image)
+    else:
+        _, patches = encode_visual_tokens(model.visual, image)
     patches = F.normalize(patches.float(), dim=-1)
 
     logits = patches @ text_features.t()
@@ -257,6 +309,7 @@ def main() -> None:
     if args.limit is not None:
         paths = paths[: args.limit]
     print(f"model={args.model_name} images={len(paths)} device={device} image_size={args.image_size}")
+    print(f"dense_mode={args.dense_mode}")
 
     model = load_model(config, args.checkpoint, device)
     text_features = encode_text_features(model, device)
@@ -264,14 +317,14 @@ def main() -> None:
     confusion = torch.zeros(len(VOC_CLASSES), len(VOC_CLASSES), dtype=torch.long)
     for index, (image_path, mask_path, image_id) in enumerate(tqdm(paths, desc=args.model_name)):
         image, target, display = preprocess_pair(image_path, mask_path, args.image_size)
-        pred = predict_mask(model, image, text_features, device, args.temperature)
+        pred = predict_mask(model, image, text_features, device, args.temperature, args.dense_mode)
         update_confusion(confusion, pred, target)
         if index < args.save_vis:
             save_visualization(vis_dir, image_id, display, pred, target)
 
     metrics = compute_metrics(confusion)
-    save_outputs(output_dir, args.model_name, metrics, confusion)
-    print(json.dumps({"model": args.model_name, **metrics}, ensure_ascii=False, indent=2))
+    save_outputs(output_dir, args.model_name, {"dense_mode": args.dense_mode, **metrics}, confusion)
+    print(json.dumps({"model": args.model_name, "dense_mode": args.dense_mode, **metrics}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

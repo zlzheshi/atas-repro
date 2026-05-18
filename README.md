@@ -248,6 +248,37 @@ outputs/voc_zero_shot_seg_full_atas_epoch6/
 docs/VOC2012零样本分割评估结果.md
 ```
 
+## 作者设置对齐训练
+
+为了向论文主结果靠近，当前已经启动完整 ImageNet 训练，而不是继续延长 2 万张子集训练。
+
+当前正式配置：
+
+```text
+configs/atas_vitb_imagenet_full_author.yaml
+```
+
+该配置对齐作者论文中的主要训练设置：完整 ImageNet、6 epochs、4 卡训练、batch size 36 per GPU、AdamW、学习率 1e-5、weight decay 0.1、`GLD=1, LLD=0.01, GGD=1`。
+
+当前状态：
+
+- DDP smoke test 已通过。
+- 完整 ImageNet 4 卡训练已启动。
+- 训练日志：`/mnt/t1b6/xuzhejia/logs/atas_full_author_wait.log`。
+- 输出目录：`outputs/atas_vitb_imagenet_full_author/`。
+- checkpoint 产生后，将优先运行 `scripts/run_voc_full_author_sweep.sh` 做 VOC2012 vanilla 评估。
+
+同时，已经完成子集 checkpoint 的 VOC sweep。结果显示 epoch 1 到 epoch 6 均未超过 OpenCLIP baseline，且后续 epoch 在 VOC dense proxy 上逐步下降。这说明问题更可能来自训练规模和下游评估框架，而不是单纯训练轮数不足。
+
+近似 MaskCLIP 尝试也已记录：当前简化实现结果异常，不能作为正式 MaskCLIP 复现结论；后续应接入更可靠的 MaskCLIP/SCLIP 实现。
+
+详细记录：
+
+```text
+docs/完整ImageNet作者设置训练进展.md
+docs/VOC_checkpoint_sweep与MaskCLIP尝试.md
+```
+
 ## 当前复现结论
 
 目前已经完成了课程大作业中比较完整的一条证据链：
@@ -259,6 +290,7 @@ docs/VOC2012零样本分割评估结果.md
 5. patch 可视化展示了局部响应变化。
 6. MSD 零样本分割代理实验补充了密集预测风格的定量与可视化结果。
 7. VOC2012 零样本分割评估补充了更标准数据集上的结果和局限性分析。
+8. 完整 ImageNet 作者设置训练已经启动，这是当前最接近论文主实验的路线。
 
 目前最适合汇报的主结论：
 
@@ -325,6 +357,9 @@ GPU=2 bash scripts/run_voc_zero_shot_seg.sh
 - `docs/子集KNN评估结果.md`
 - `docs/ATAS_epoch6继续训练与评估结果.md`
 - `docs/后续实验计划.md`
+- `docs/作者设置对齐实验计划.md`
+- `docs/完整ImageNet作者设置训练进展.md`
+- `docs/VOC_checkpoint_sweep与MaskCLIP尝试.md`
 - `docs/Patch级可视化说明.md`
 - `docs/MSD_zero_shot_segmentation_proxy.md`
 - `docs/VOC2012零样本分割评估结果.md`
