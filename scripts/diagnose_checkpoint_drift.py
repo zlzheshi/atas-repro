@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="outputs/checkpoint_drift")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--num-workers", type=int, default=None)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--max-batches", type=int, default=8)
     parser.add_argument("--max-pairwise-patches", type=int, default=512)
     parser.add_argument("--seed", type=int, default=0)
@@ -108,8 +108,6 @@ def make_loader(config: dict, args: argparse.Namespace) -> DataLoader:
     dataset = ImagePathFolder(root=args.data_root)
     batch_size = args.batch_size or int(config["training"]["batch_size"])
     num_workers = args.num_workers
-    if num_workers is None:
-        num_workers = int(config["data"].get("num_workers", 0))
     collator = MosaicBatchCollator(
         global_image_size=int(config["data"]["global_image_size"]),
         mosaic_image_size=int(config["data"]["image_size"]),

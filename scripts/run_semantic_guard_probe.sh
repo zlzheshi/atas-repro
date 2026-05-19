@@ -46,6 +46,7 @@ run_drift_diagnostic() {
     --checkpoint "full_epoch1=${FULL_CHECKPOINT_DIR}/checkpoint_epoch_1.pt" \
     --checkpoint "full_epoch6=${FULL_CHECKPOINT_DIR}/checkpoint_epoch_6.pt" \
     --output-dir "$output_dir" \
+    --num-workers 0 \
     --max-batches 8 \
     --max-pairwise-patches 512 \
     2>&1 | tee "$log_file"
@@ -64,6 +65,7 @@ run_drift_diagnostic_with_probe() {
     --checkpoint "full_epoch6=${FULL_CHECKPOINT_DIR}/checkpoint_epoch_6.pt" \
     --checkpoint "semantic_guard_probe=outputs/atas_vitb_subset_100x200_semantic_guard_probe/checkpoint_epoch_1.pt" \
     --output-dir "$output_dir" \
+    --num-workers 0 \
     --max-batches 8 \
     --max-pairwise-patches 512 \
     2>&1 | tee "$log_file"
