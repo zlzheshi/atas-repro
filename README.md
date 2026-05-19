@@ -192,6 +192,23 @@ python scripts/diagnose_checkpoint_drift.py \
 
 更完整的实验记录见 [完整 ImageNet VOC 评估结果](docs/完整ImageNet_VOC评估结果.md)。
 
+### Semantic Guard 子集 Probe
+
+为减少 ATAS 训练对 CLIP 局部表征的破坏，仓库补充了一个保守消融配置：
+
+```text
+configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
+```
+
+该 probe 在 ImageNet-100x200 子集上训练 160 steps。相比完整 ATAS epoch 6，它显著降低 patch token 漂移，并把 VOC2012 结果从 `0.3029/0.4244` 回升到：
+
+| 设置 | Foreground mIoU | Pixel Acc | Mean Class Acc |
+| --- | ---: | ---: | ---: |
+| Vanilla | 0.3800 | 0.5329 | 0.5665 |
+| SCLIP 风格 | 0.6614 | 0.7772 | 0.8104 |
+
+该 probe 仍未超过 OpenCLIP baseline，但说明后续改进应优先控制 patch 表征漂移。
+
 ## 当前复现差距
 
 论文报告 ATAS 训练后 VOC20 等下游任务有提升。本仓库当前在已实现的 VOC2012 vanilla 和 SCLIP 风格评估中，ATAS checkpoint 尚未超过 OpenCLIP baseline。

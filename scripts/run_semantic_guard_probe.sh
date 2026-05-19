@@ -108,6 +108,20 @@ run_voc_eval() {
     2>&1 | tee "$LOG_DIR/eval_semantic_guard_probe_voc.log"
 }
 
+run_voc_sclip_eval() {
+  local gpu
+  gpu=$(wait_for_gpu)
+  echo "[$(date '+%F %T')] evaluating semantic guard probe on VOC2012 with SCLIP-style dense inference on GPU ${gpu}"
+  CUDA_VISIBLE_DEVICES="$gpu" PYTHONPATH=. python scripts/evaluate_voc_zero_shot_seg.py \
+    --config configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml \
+    --voc-root "$VOC_ROOT" \
+    --checkpoint outputs/atas_vitb_subset_100x200_semantic_guard_probe/checkpoint_epoch_1.pt \
+    --model-name semantic_guard_probe_sclip \
+    --dense-mode sclip \
+    --output-dir outputs/voc_sclip_semantic_guard_probe \
+    2>&1 | tee "$LOG_DIR/eval_semantic_guard_probe_sclip.log"
+}
+
 run_drift_diagnostic \
   outputs/checkpoint_drift_full_author_subset \
   "$LOG_DIR/checkpoint_drift_full_author_subset.log"
@@ -115,6 +129,7 @@ run_drift_diagnostic \
 run_semantic_guard_probe
 run_knn_eval
 run_voc_eval
+run_voc_sclip_eval
 
 run_drift_diagnostic_with_probe \
   outputs/checkpoint_drift_full_author_subset_after_probe \

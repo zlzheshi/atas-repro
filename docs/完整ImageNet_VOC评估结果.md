@@ -72,6 +72,77 @@ outputs/voc_sclip_full_author/
 - 但 ATAS checkpoint 在 SCLIP 风格评估中仍低于 OpenCLIP baseline。
 - 这意味着当前复现中的 ATAS 训练并没有把 patch token 调整到有利于 VOC2012 zero-shot segmentation 的方向，至少没有在我们实现的 vanilla/SCLIP 评估下体现出作者论文中的提升。
 
+## Semantic Guard Probe
+
+为排查 ATAS checkpoint 下游下降的原因，我们补充了一组保护语义的子集 probe：
+
+```text
+configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
+```
+
+该配置相对作者设置做了保守调整：
+
+- 学习率从 `1e-5` 降到 `5e-6`。
+- weight decay 从 `0.1` 降到 `0.05`。
+- `GLD` 权重从 `1.0` 降到 `0.25`。
+- `GGD` 权重从 `1.0` 提到 `4.0`。
+- 在 ImageNet-100x200 子集上训练 160 steps。
+
+### 表征漂移诊断
+
+诊断脚本：
+
+```bash
+python scripts/diagnose_checkpoint_drift.py \
+  --config configs/atas_vitb_subset_100x200_stable.yaml \
+  --data-root /mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train \
+  --checkpoint full_epoch1=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_1.pt \
+  --checkpoint full_epoch6=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt \
+  --checkpoint semantic_guard_probe=outputs/atas_vitb_subset_100x200_semantic_guard_probe/checkpoint_epoch_1.pt \
+  --output-dir outputs/checkpoint_drift_full_author_subset_after_probe
+```
+
+关键结果：
+
+| 模型 | CLS cosine | Global patch cosine | Mosaic patch cosine | Patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: |
+| OpenCLIP baseline | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+| Full ATAS epoch 1 | 0.6627 | 0.6610 | -0.0367 | 0.5659 |
+| Full ATAS epoch 6 | 0.6484 | 0.5159 | -0.0430 | 0.5764 |
+| Semantic guard probe | 0.6905 | 0.9555 | 0.6633 | 0.0102 |
+
+结论：
+
+- Full ATAS checkpoint 的 mosaic patch token 与 teacher 几乎失去正相关，说明训练明显改变了局部表征结构。
+- Semantic guard probe 显著降低 patch 表征漂移，尤其是 patch pairwise MSE 从约 `0.57` 降到 `0.0102`。
+- 这支持一个判断：当前复现效果下降，很可能与 ATAS 训练中过强的局部迁移/局部表征漂移有关。
+
+### 子集 kNN
+
+| 模型 | Top-1 kNN | Top-5 | 类中心间隔 |
+| --- | ---: | ---: | ---: |
+| OpenCLIP baseline | 0.8900 | 0.9653 | 0.0757 |
+| Semantic guard probe | 0.8900 | 0.9678 | 0.2150 |
+
+Semantic guard probe 没有降低 ImageNet 子集 kNN Top-1，同时类中心间隔明显增加，说明该方向比 full ATAS 更好地保留了全局语义。
+
+### VOC2012
+
+| 设置 | 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
+| --- | --- | ---: | ---: | ---: |
+| Vanilla | OpenCLIP baseline | 0.4016 | 0.5565 | 0.5680 |
+| Vanilla | Full ATAS epoch 6 | 0.3029 | 0.4672 | 0.5152 |
+| Vanilla | Semantic guard probe | 0.3800 | 0.5329 | 0.5665 |
+| SCLIP 风格 | OpenCLIP baseline | 0.6826 | 0.8034 | 0.8292 |
+| SCLIP 风格 | Full ATAS epoch 6 | 0.4244 | 0.5618 | 0.6388 |
+| SCLIP 风格 | Semantic guard probe | 0.6614 | 0.7772 | 0.8104 |
+
+结论：
+
+- Semantic guard probe 明显优于 full ATAS epoch 6，说明保守训练方向有效。
+- 但它仍低于 OpenCLIP baseline，因此还不能认为已经复现出作者论文中的 ATAS 增益。
+- 后续应继续围绕“减少 patch token 破坏，同时保留 ATAS 局部迁移能力”做消融，而不是直接重复完整 ImageNet 训练。
+
 ## 与作者论文结果的关系
 
 作者论文报告的 VOC20 结果中：
@@ -102,3 +173,4 @@ outputs/voc_sclip_full_author/
 2. 对比 OpenCLIP 与论文使用的 CLIP ViT-B/16 权重和视觉 transformer forward 细节。
 3. 接入官方或成熟的 MaskCLIP/SCLIP 代码，而不是当前轻量近似实现。
 4. 额外做 ImageNet kNN 或 retrieval 评估，确认完整 ImageNet 训练是否保持了全局语义能力。
+5. 沿 semantic guard 方向继续扫 `GLD/GGD/lr`，先在子集和 VOC 快速筛选，再决定是否启动完整 ImageNet 训练。
