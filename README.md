@@ -164,6 +164,19 @@ python scripts/evaluate_imagenet_subset_knn.py \
   --output-dir outputs/eval_subset_100x200_epoch6_knn
 ```
 
+### Checkpoint 表征漂移诊断
+
+该脚本用于比较 ATAS checkpoint 相比冻结 CLIP teacher 的 CLS token、patch token 和 pairwise 相似度漂移，辅助判断训练是否破坏了原始 CLIP 语义：
+
+```bash
+python scripts/diagnose_checkpoint_drift.py \
+  --config configs/atas_vitb_subset_100x200_stable.yaml \
+  --data-root /path/to/imagenet_subset_100x200/train \
+  --checkpoint epoch1=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_1.pt \
+  --checkpoint epoch6=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt \
+  --output-dir outputs/checkpoint_drift_full_author_subset
+```
+
 ## 实验结果
 
 ### 完整 ImageNet checkpoint 的 VOC2012 评估
