@@ -269,6 +269,8 @@ configs/atas_vitb_imagenet_full_author.yaml
 - checkpoint 产生后，将优先运行 `scripts/run_voc_full_author_sweep.sh` 做 VOC2012 vanilla 评估。
 - 同时已预留 `scripts/run_voc_sclip_eval.sh`，用于后续做更接近论文下游框架的 SCLIP 风格评估。
 
+更新：完整 ImageNet 6 epoch 训练已经完成，`checkpoint_epoch_6.pt` 已生成；vanilla VOC2012 sweep 和 SCLIP 风格 VOC2012 评估也已完成。当前结果显示 ATAS checkpoint 没有在我们的 VOC2012 评估中超过 OpenCLIP baseline，因此后续报告应如实呈现“训练流程复现完成，但论文下游提升尚未复现”的结论。
+
 同时，已经完成子集 checkpoint 的 VOC sweep。结果显示 epoch 1 到 epoch 6 均未超过 OpenCLIP baseline，且后续 epoch 在 VOC dense proxy 上逐步下降。这说明问题更可能来自训练规模和下游评估框架，而不是单纯训练轮数不足。
 
 近似 MaskCLIP 尝试也已记录：当前简化实现结果异常，不能作为正式 MaskCLIP 复现结论；后续应接入更可靠的 MaskCLIP/SCLIP 实现。
@@ -278,6 +280,7 @@ configs/atas_vitb_imagenet_full_author.yaml
 ```text
 docs/完整ImageNet作者设置训练进展.md
 docs/VOC_checkpoint_sweep与MaskCLIP尝试.md
+docs/完整ImageNet_VOC评估结果.md
 ```
 
 ## 当前复现结论
@@ -361,6 +364,7 @@ GPU=2 bash scripts/run_voc_zero_shot_seg.sh
 - `docs/作者设置对齐实验计划.md`
 - `docs/完整ImageNet作者设置训练进展.md`
 - `docs/VOC_checkpoint_sweep与MaskCLIP尝试.md`
+- `docs/完整ImageNet_VOC评估结果.md`
 - `docs/Patch级可视化说明.md`
 - `docs/MSD_zero_shot_segmentation_proxy.md`
 - `docs/VOC2012零样本分割评估结果.md`

@@ -1,0 +1,104 @@
+# 完整 ImageNet 训练后的 VOC2012 评估结果
+
+## 实验背景
+
+完整 ImageNet 作者设置训练已经完成，最终 checkpoint 为：
+
+```text
+outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt
+```
+
+训练设置与作者论文主训练设置基本对齐：完整 ImageNet、6 epochs、4 卡 DDP、batch size 36 per GPU、AdamW、学习率 1e-5、weight decay 0.1，损失权重为 `GLD=1, LLD=0.01, GGD=1`。
+
+训练完成后，我们补充了两组 VOC2012 zero-shot dense prediction 评估：
+
+1. vanilla patch matching：直接用 ViT patch token 与 VOC 类别文本特征匹配。
+2. SCLIP 风格评估：在最后一层 ViT block 使用 self-correlation attention 得到 dense patch 表征。
+
+## Vanilla VOC2012 评估
+
+运行脚本：
+
+```bash
+GPU=0 bash scripts/run_voc_full_author_sweep.sh
+```
+
+结果目录：
+
+```text
+outputs/voc_full_author_sweep/
+```
+
+| 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
+| --- | ---: | ---: | ---: |
+| OpenCLIP baseline | 0.4016 | 0.5565 | 0.5680 |
+| ATAS epoch 1 | 0.3187 | 0.4770 | 0.5364 |
+| ATAS epoch 2 | 0.3108 | 0.4709 | 0.5238 |
+| ATAS epoch 6 | 0.3029 | 0.4672 | 0.5152 |
+| ATAS epoch 3 | 0.3003 | 0.4616 | 0.5122 |
+| ATAS epoch 4 | 0.2981 | 0.4625 | 0.5114 |
+| ATAS epoch 5 | 0.2925 | 0.4567 | 0.5018 |
+
+结论：
+
+- 在当前 vanilla patch matching 评估中，完整 ImageNet ATAS checkpoint 仍未超过 OpenCLIP baseline。
+- 最好的 ATAS checkpoint 是 epoch 1，前景 mIoU 为 0.3187；最终 epoch 6 为 0.3029。
+- 这说明“直接 patch token 与文本特征匹配”的评估方式没有复现论文中 Vanilla ATAS 的提升。
+
+## SCLIP 风格 VOC2012 评估
+
+运行脚本：
+
+```bash
+GPU=0 bash scripts/run_voc_sclip_eval.sh
+```
+
+结果目录：
+
+```text
+outputs/voc_sclip_full_author/
+```
+
+| 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
+| --- | ---: | ---: | ---: |
+| OpenCLIP baseline + SCLIP | 0.6826 | 0.8034 | 0.8292 |
+| ATAS epoch 1 + SCLIP | 0.4410 | 0.5731 | 0.6435 |
+| ATAS epoch 6 + SCLIP | 0.4244 | 0.5618 | 0.6388 |
+| ATAS epoch 3 + SCLIP | 0.4001 | 0.5310 | 0.5989 |
+
+结论：
+
+- SCLIP 风格推理显著提升了 OpenCLIP baseline，说明 dense inference 框架本身对 VOC2012 很关键。
+- 但 ATAS checkpoint 在 SCLIP 风格评估中仍低于 OpenCLIP baseline。
+- 这意味着当前复现中的 ATAS 训练并没有把 patch token 调整到有利于 VOC2012 zero-shot segmentation 的方向，至少没有在我们实现的 vanilla/SCLIP 评估下体现出作者论文中的提升。
+
+## 与作者论文结果的关系
+
+作者论文报告的 VOC20 结果中：
+
+- Vanilla CLIP：41.8 mIoU
+- Vanilla ATAS：56.0 mIoU
+- SCLIP CLIP：78.2 mIoU
+- SCLIP ATAS：80.6 mIoU
+
+我们当前结果显示：
+
+- vanilla OpenCLIP baseline 为 40.16 mIoU，和作者 Vanilla CLIP baseline 接近。
+- SCLIP 风格 OpenCLIP baseline 为 68.26 mIoU，低于作者 SCLIP baseline，但方向合理。
+- ATAS checkpoint 没有带来论文中的 dense prediction 增益。
+
+因此，当前阶段最稳妥的报告口径不是“完全复现了论文提升”，而是：
+
+1. 已经完整搭建并跑通了作者设置的 ATAS 自蒸馏训练流程。
+2. 完整 ImageNet 6 epoch checkpoint 已生成。
+3. 在 VOC2012 下游评估中，我们的 ATAS checkpoint 没有复现出论文的 mIoU 提升。
+4. 结果提示关键差异可能来自实现细节，包括 teacher/student token 对齐、mosaic 训练细节、dense evaluation 框架细节，或 OpenCLIP 与论文 CLIP 权重/实现差异。
+
+## 后续优先排查方向
+
+接下来如果继续提高复现程度，优先做：
+
+1. 检查 ATAS 训练损失实现是否与论文完全一致，尤其是 GLD/LLD/GGD 的正负样本构造和归一化位置。
+2. 对比 OpenCLIP 与论文使用的 CLIP ViT-B/16 权重和视觉 transformer forward 细节。
+3. 接入官方或成熟的 MaskCLIP/SCLIP 代码，而不是当前轻量近似实现。
+4. 额外做 ImageNet kNN 或 retrieval 评估，确认完整 ImageNet 训练是否保持了全局语义能力。
