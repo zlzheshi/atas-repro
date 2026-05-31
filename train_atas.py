@@ -250,7 +250,12 @@ def main() -> None:
 
     model_name = config["model"]["name"]
     pretrained = config["model"]["pretrained"]
-    student, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+    force_quick_gelu = bool(config["model"].get("quick_gelu", False))
+    student, _, _ = open_clip.create_model_and_transforms(
+        model_name,
+        pretrained=pretrained,
+        force_quick_gelu=force_quick_gelu,
+    )
     teacher = copy.deepcopy(student)
     teacher.eval()
 

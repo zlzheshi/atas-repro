@@ -1,5 +1,47 @@
 # 完整 ImageNet 训练后的 VOC2012 评估结果
 
+## 最新 QuickGELU 作者参数对齐实验
+
+旧实验发现 OpenAI CLIP ViT-B/16 权重需要显式启用 QuickGELU。修正后，我们补充了一轮作者参数对齐训练：
+
+```text
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2.yaml
+outputs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2/checkpoint_epoch_6.pt
+```
+
+训练设置：
+
+- ImageNet 全量训练。
+- OpenAI CLIP ViT-B/16 + QuickGELU。
+- `960x960` 输入，`6x6` mosaic。
+- 6 epochs。
+- 每卡 batch size 36，2 GPU，gradient accumulation 2，等效优化 batch 144。
+- AdamW，`lr=1e-5`，`weight_decay=0.1`。
+- `GLD=1.0, LLD=0.01, GGD=1.0`。
+
+评估结果：
+
+| 设置 | 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
+| --- | --- | ---: | ---: | ---: |
+| Vanilla | QuickGELU CLIP baseline | 0.3604 | 0.5191 | 0.5111 |
+| Vanilla | QuickGELU ATAS epoch 6 | 0.3111 | 0.4729 | 0.5240 |
+| SCLIP 风格 | QuickGELU CLIP baseline | 0.7650 | 0.8602 | 0.8790 |
+| SCLIP 风格 | QuickGELU ATAS epoch 6 | 0.5703 | 0.7024 | 0.7750 |
+
+表征漂移诊断：
+
+| 模型 | CLS cosine | Global patch cosine | Mosaic patch cosine | Mosaic patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: |
+| QuickGELU baseline | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+| QuickGELU ATAS epoch 6 | 0.6816 | 0.5106 | -0.0393 | 0.5448 |
+
+结论：
+
+- QuickGELU 修正后，SCLIP baseline 已经接近论文中 SCLIP CLIP 的量级。
+- 但 ATAS checkpoint 仍显著低于 baseline，尤其 SCLIP 风格评估下降明显。
+- 当前最重要的技术证据是 patch token 漂移：mosaic patch 与 teacher 的平均 cosine 已接近 0，说明局部表征结构被破坏。
+- 详细代码审计和后续优先级见 [作者参数 QuickGELU 复现实验审计](作者参数QuickGELU复现实验审计.md)。
+
 ## 实验背景
 
 完整 ImageNet 作者设置训练已经完成，最终 checkpoint 为：

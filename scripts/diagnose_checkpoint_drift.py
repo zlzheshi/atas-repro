@@ -264,7 +264,12 @@ def main() -> None:
 
     model_name = config["model"]["name"]
     pretrained = config["model"]["pretrained"]
-    base_model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+    force_quick_gelu = bool(config["model"].get("quick_gelu", False))
+    base_model, _, _ = open_clip.create_model_and_transforms(
+        model_name,
+        pretrained=pretrained,
+        force_quick_gelu=force_quick_gelu,
+    )
     base_model = base_model.eval()
     teacher = copy.deepcopy(base_model).to(device).eval()
     teacher_encoder = CLIPVisualTokenEncoder(teacher.visual).to(device).eval()

@@ -63,7 +63,12 @@ def main() -> None:
     torch.manual_seed(0)
     model_name = config["model"]["name"]
     pretrained = config["model"]["pretrained"]
-    student, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+    force_quick_gelu = bool(config["model"].get("quick_gelu", False))
+    student, _, _ = open_clip.create_model_and_transforms(
+        model_name,
+        pretrained=pretrained,
+        force_quick_gelu=force_quick_gelu,
+    )
     teacher = copy.deepcopy(student)
     if args.checkpoint is not None:
         checkpoint = torch.load(args.checkpoint, map_location="cpu")

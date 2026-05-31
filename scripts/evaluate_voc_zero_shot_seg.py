@@ -90,9 +90,11 @@ def voc_paths(voc_root: Path, split: str) -> list[tuple[Path, Path, str]]:
 
 
 def load_model(config: dict, checkpoint: str | None, device: torch.device) -> nn.Module:
+    force_quick_gelu = bool(config["model"].get("quick_gelu", False))
     model, _, _ = open_clip.create_model_and_transforms(
         config["model"]["name"],
         pretrained=config["model"]["pretrained"],
+        force_quick_gelu=force_quick_gelu,
     )
     if checkpoint is not None:
         loaded = torch.load(checkpoint, map_location="cpu")

@@ -79,7 +79,12 @@ def build_split(
 def load_model(config: dict, checkpoint: str | None, device: torch.device) -> tuple[nn.Module, object]:
     model_name = config["model"]["name"]
     pretrained = config["model"]["pretrained"]
-    model, _, preprocess_val = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+    force_quick_gelu = bool(config["model"].get("quick_gelu", False))
+    model, _, preprocess_val = open_clip.create_model_and_transforms(
+        model_name,
+        pretrained=pretrained,
+        force_quick_gelu=force_quick_gelu,
+    )
 
     if checkpoint is not None:
         loaded = torch.load(checkpoint, map_location="cpu")

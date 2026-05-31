@@ -2,7 +2,7 @@
 
 本仓库是论文 **ATAS: Any-to-Any Self-Distillation for Enhanced Open-Vocabulary Dense Prediction** 的 PyTorch 复现实现，重点覆盖 CLIP ViT 图像编码器自蒸馏训练，以及基于 PASCAL VOC2012 的开放词汇语义分割评估。
 
-> 当前状态：已完成 ATAS 训练主流程、ImageNet 多卡训练、断点续训、VOC2012 vanilla patch matching 评估和 SCLIP 风格 dense inference 评估。当前复现实验尚未达到论文中下游指标提升的效果。
+> 当前状态：已完成 ATAS 训练主流程、ImageNet 多卡训练、断点续训、VOC2012 vanilla patch matching 评估和 SCLIP 风格 dense inference 评估。最新一轮已修正 OpenAI CLIP ViT-B/16 的 QuickGELU 设置，但当前复现实验仍未达到论文中下游指标提升的效果。
 
 ## 特性
 
@@ -179,6 +179,25 @@ python scripts/diagnose_checkpoint_drift.py \
 
 ## 实验结果
 
+### 作者参数 QuickGELU 对齐实验
+
+最新完整训练配置：
+
+```text
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2.yaml
+```
+
+该配置使用 OpenAI CLIP ViT-B/16 权重并显式启用 QuickGELU。训练使用 2 卡 DDP + `gradient_accumulation_steps=2`，保持等效优化 batch 为 `144`，其余主要训练参数保持作者设置：ImageNet 全量、6 epochs、`lr=1e-5`、`weight_decay=0.1`、`GLD=1`、`LLD=0.01`、`GGD=1`、`6x6` mosaic。
+
+| 设置 | 模型 | Foreground mIoU | Pixel Acc | Mean Class Acc |
+| --- | --- | ---: | ---: | ---: |
+| Vanilla | QuickGELU CLIP baseline | 0.3604 | 0.5191 | 0.5111 |
+| Vanilla | QuickGELU ATAS epoch 6 | 0.3111 | 0.4729 | 0.5240 |
+| SCLIP 风格 | QuickGELU CLIP baseline | 0.7650 | 0.8602 | 0.8790 |
+| SCLIP 风格 | QuickGELU ATAS epoch 6 | 0.5703 | 0.7024 | 0.7750 |
+
+表征漂移诊断显示，QuickGELU ATAS epoch 6 的 `mosaic_patch_cos_to_teacher_mean=-0.0393`，说明 student 的 mosaic patch token 与 teacher 几乎失去正相关。详细审计见 [作者参数 QuickGELU 复现实验审计](docs/作者参数QuickGELU复现实验审计.md)。
+
 ### 完整 ImageNet checkpoint 的 VOC2012 评估
 
 | 设置 | 模型 | Foreground mIoU | Pixel Acc | Mean Class Acc |
@@ -226,6 +245,8 @@ configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
 - [课程作业汇报](docs/课程作业汇报.md)
 - [服务器运行指南](docs/服务器运行指南.md)
 - [完整 ImageNet VOC 评估结果](docs/完整ImageNet_VOC评估结果.md)
+- [ATAS 三项蒸馏实现说明](docs/ATAS三项蒸馏实现说明.md)
+- [作者参数 QuickGELU 复现实验审计](docs/作者参数QuickGELU复现实验审计.md)
 
 ## 引用
 
