@@ -237,11 +237,30 @@ scripts/evaluate_voc_zero_shot_seg.py
 
 ## 8. 主要风险点与后续优先级
 
-后续如果继续追近作者结果，优先级如下：
+审计后已完成第一项实现修正：GLD/GGD 已支持 DDP `all_gather` teacher features。启用方式：
 
-1. **跨 GPU 对比学习负样本**：为 GLD/GGD 增加 DDP `all_gather`，让 InfoNCE 使用全局 batch 负样本，而不是本地 36 个样本。
+```yaml
+training:
+  gather_distributed_negatives: true
+```
+
+### 修正后的 probe 结果
+
+| 设置 | Vanilla mIoU | SCLIP mIoU | kNN Top-1 | Mosaic patch cosine | Patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| QuickGELU all-gather probe | 0.3615 | 0.6901 | 0.9083 | 0.0595 | 0.3762 |
+| QuickGELU semantic guard + all-gather probe | 0.3522 | 0.7410 | 0.9113 | 0.4667 | 0.0257 |
+
+结论：
+
+- all-gather 明显改善结果，说明“本地负样本不足”确实是关键实现差异。
+- semantic guard 与 all-gather 组合最稳定，SCLIP mIoU 达到 `0.7410`，距离 QuickGELU SCLIP baseline `0.7650` 已经较近。
+- 但 semantic guard 修改了作者给出的损失权重，因此它更适合作为诊断和改进方向，而不是作者参数完全复现结果。
+
+### 后续优先级
+
+1. **完整 ImageNet all-gather 作者参数训练**：当前已启动 `configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml`，它使用 2GPU、每卡 batch72，使全局负样本数和等效优化 batch 都为 144。
 2. **LLD 约束强度**：验证完整 patch-patch 或更稳定采样策略，确认 `lambda_lld=0.01` 下是否足以保留 patch 结构。
 3. **学习率调度**：当前训练没有显式 warmup/cosine scheduler；如果作者实现使用 scheduler，需要补齐。
 4. **官方 dense evaluation**：接入更接近作者的 MaskCLIP/SCLIP 评估实现，避免评估管线差异掩盖训练效果。
-5. **更细粒度消融**：优先在小规模 ImageNet 子集上验证 `all_gather`、LLD 采样、scheduler，再决定是否重跑完整 ImageNet。
-
+5. **完整 ImageNet semantic guard + all-gather**：如果作者参数 all-gather 仍不达标，再考虑把 probe 中有效的 semantic guard 组合扩展到完整 ImageNet，但报告中必须标注它已经不是作者原始参数。

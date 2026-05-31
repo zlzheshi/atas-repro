@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -13,23 +14,58 @@ class ATASLossConfig:
     lambda_gld: float = 1.0
     lambda_lld: float = 0.01
     lambda_ggd: float = 1.0
+    gather_distributed_negatives: bool = False
 
 
 def normalize_features(x: Tensor) -> Tensor:
     return F.normalize(x, dim=-1)
 
 
-def contrastive_self_distill(student: Tensor, teacher: Tensor, temperature: float) -> Tensor:
+def distributed_world_size() -> int:
+    if not dist.is_available() or not dist.is_initialized():
+        return 1
+    return dist.get_world_size()
+
+
+def gather_teacher_features(teacher: Tensor) -> tuple[Tensor, int]:
+    """Gather teacher features across DDP ranks for global InfoNCE negatives."""
+    if distributed_world_size() == 1:
+        return teacher, 0
+
+    teacher = teacher.contiguous()
+    gathered = [torch.empty_like(teacher) for _ in range(dist.get_world_size())]
+    dist.all_gather(gathered, teacher)
+    return torch.cat(gathered, dim=0), dist.get_rank()
+
+
+def contrastive_self_distill(
+    student: Tensor,
+    teacher: Tensor,
+    temperature: float,
+    gather_distributed_negatives: bool = False,
+) -> Tensor:
     """One-way contrastive loss between matched student and teacher features."""
     student = normalize_features(student)
     teacher = normalize_features(teacher)
+
+    target_offset = 0
+    if gather_distributed_negatives:
+        local_batch = student.shape[0]
+        teacher, rank = gather_teacher_features(teacher)
+        target_offset = rank * local_batch
+
     logits = student @ teacher.t()
     logits = logits / temperature
-    targets = torch.arange(logits.shape[0], device=logits.device)
+    targets = torch.arange(logits.shape[0], device=logits.device) + target_offset
     return F.cross_entropy(logits, targets)
 
 
-def global_to_local_loss(student_patches: Tensor, teacher_cls: Tensor, temperature: float) -> Tensor:
+def global_to_local_loss(
+    student_patches: Tensor,
+    teacher_cls: Tensor,
+    temperature: float,
+    gather_distributed_negatives: bool = False,
+) -> Tensor:
     """ATAS GLD loss.
 
     Args:
@@ -44,7 +80,12 @@ def global_to_local_loss(student_patches: Tensor, teacher_cls: Tensor, temperatu
     patch_weights = F.softmax(patch_weights / temperature, dim=1)
     aggregated_local = torch.einsum("bn,bnd->bd", patch_weights, student_patches)
 
-    return contrastive_self_distill(aggregated_local, teacher_cls, temperature)
+    return contrastive_self_distill(
+        aggregated_local,
+        teacher_cls,
+        temperature,
+        gather_distributed_negatives=gather_distributed_negatives,
+    )
 
 
 def weighted_region_pool(
@@ -87,6 +128,7 @@ def region_global_to_local_loss(
     region_boxes: Tensor,
     patch_grid: tuple[int, int],
     temperature: float,
+    gather_distributed_negatives: bool = False,
 ) -> Tensor:
     """GLD loss for mosaic training, aligning each cell with its source CLS token."""
     pooled_regions = weighted_region_pool(
@@ -96,7 +138,12 @@ def region_global_to_local_loss(
         patch_grid=patch_grid,
         temperature=temperature,
     )
-    return contrastive_self_distill(pooled_regions, teacher_cls, temperature)
+    return contrastive_self_distill(
+        pooled_regions,
+        teacher_cls,
+        temperature,
+        gather_distributed_negatives=gather_distributed_negatives,
+    )
 
 
 def local_to_local_loss(student_patches: Tensor, teacher_patches: Tensor) -> Tensor:
@@ -109,9 +156,19 @@ def local_to_local_loss(student_patches: Tensor, teacher_patches: Tensor) -> Ten
     return F.mse_loss(student_rel, teacher_rel)
 
 
-def global_to_global_loss(student_cls: Tensor, teacher_cls: Tensor, temperature: float) -> Tensor:
+def global_to_global_loss(
+    student_cls: Tensor,
+    teacher_cls: Tensor,
+    temperature: float,
+    gather_distributed_negatives: bool = False,
+) -> Tensor:
     """ATAS GGD loss preserving the teacher's global CLIP semantics."""
-    return contrastive_self_distill(student_cls, teacher_cls, temperature)
+    return contrastive_self_distill(
+        student_cls,
+        teacher_cls,
+        temperature,
+        gather_distributed_negatives=gather_distributed_negatives,
+    )
 
 
 def atas_loss(
@@ -122,9 +179,19 @@ def atas_loss(
     config: ATASLossConfig,
 ) -> tuple[Tensor, dict[str, Tensor]]:
     """Compute the weighted ATAS objective."""
-    loss_gld = global_to_local_loss(student_patches, teacher_cls, config.temperature)
+    loss_gld = global_to_local_loss(
+        student_patches,
+        teacher_cls,
+        config.temperature,
+        gather_distributed_negatives=config.gather_distributed_negatives,
+    )
     loss_lld = local_to_local_loss(student_patches, teacher_patches)
-    loss_ggd = global_to_global_loss(student_cls, teacher_cls, config.temperature)
+    loss_ggd = global_to_global_loss(
+        student_cls,
+        teacher_cls,
+        config.temperature,
+        gather_distributed_negatives=config.gather_distributed_negatives,
+    )
 
     total = (
         config.lambda_gld * loss_gld
@@ -159,6 +226,7 @@ def atas_region_loss(
         region_boxes=region_boxes,
         patch_grid=patch_grid,
         temperature=config.temperature,
+        gather_distributed_negatives=config.gather_distributed_negatives,
     )
 
     if max_lld_patches is not None and student_mosaic_patches.shape[1] > max_lld_patches:
@@ -171,7 +239,12 @@ def atas_region_loss(
         teacher_lld_patches = teacher_mosaic_patches
 
     loss_lld = local_to_local_loss(student_lld_patches, teacher_lld_patches)
-    loss_ggd = global_to_global_loss(student_global_cls, teacher_global_cls, config.temperature)
+    loss_ggd = global_to_global_loss(
+        student_global_cls,
+        teacher_global_cls,
+        config.temperature,
+        gather_distributed_negatives=config.gather_distributed_negatives,
+    )
 
     total = (
         config.lambda_gld * loss_gld

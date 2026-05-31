@@ -292,6 +292,7 @@ def main() -> None:
         lambda_gld=config["training"]["lambda_gld"],
         lambda_lld=config["training"]["lambda_lld"],
         lambda_ggd=config["training"]["lambda_ggd"],
+        gather_distributed_negatives=bool(config["training"].get("gather_distributed_negatives", False)),
     )
     optimizer = torch.optim.AdamW(
         student_encoder.parameters(),

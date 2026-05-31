@@ -42,6 +42,57 @@ outputs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2/checkpoint_epoch_6.
 - 当前最重要的技术证据是 patch token 漂移：mosaic patch 与 teacher 的平均 cosine 已接近 0，说明局部表征结构被破坏。
 - 详细代码审计和后续优先级见 [作者参数 QuickGELU 复现实验审计](作者参数QuickGELU复现实验审计.md)。
 
+## All-Gather 与 Semantic Guard Probe
+
+为排查多卡训练中 InfoNCE 负样本不足的问题，代码新增了：
+
+```yaml
+training:
+  gather_distributed_negatives: true
+```
+
+开启后，GLD/GGD 在 DDP 进程间收集 teacher features。这样每张卡上的 student query 不再只和本地 teacher batch 对比，而是和全局 teacher batch 对比。
+
+### Probe 配置
+
+| 配置 | 说明 |
+| --- | --- |
+| `configs/atas_vitb_subset_100x200_quickgelu_allgather_probe.yaml` | QuickGELU，作者损失权重，80 steps，2GPU all-gather |
+| `configs/atas_vitb_subset_100x200_quickgelu_semantic_guard_allgather_probe.yaml` | QuickGELU，保守语义约束，160 steps，2GPU all-gather |
+
+### Probe 结果
+
+| 设置 | Vanilla mIoU | SCLIP mIoU | kNN Top-1 | Mosaic patch cosine | Patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| QuickGELU all-gather probe | 0.3615 | 0.6901 | 0.9083 | 0.0595 | 0.3762 |
+| QuickGELU semantic guard + all-gather probe | 0.3522 | 0.7410 | 0.9113 | 0.4667 | 0.0257 |
+
+结论：
+
+- 单独加入 all-gather 后，SCLIP mIoU 从完整作者参数 QuickGELU ATAS 的 `0.5703` 回升到 `0.6901`。
+- semantic guard 与 all-gather 组合后，SCLIP mIoU 进一步达到 `0.7410`，已经接近 QuickGELU SCLIP baseline 的 `0.7650`。
+- 该组合同时把 mosaic patch pairwise MSE 降到 `0.0257`，说明 patch 结构被明显保留下来。
+- 这支持当前判断：复现失败的主要原因之一不是数据或评估本身，而是训练实现中缺少全局 batch 负样本，以及作者参数下局部迁移过强导致 patch token 漂移。
+
+### 正在运行的完整实验
+
+为进一步对齐作者的全局 batch，我们启动了完整 ImageNet 训练：
+
+```text
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
+```
+
+该配置使用：
+
+- 2 GPU。
+- 每卡 batch size 72。
+- `gradient_accumulation_steps=1`。
+- `gather_distributed_negatives=true`。
+- 单步全局负样本数为 `72 x 2 = 144`。
+- 等效优化 batch 也是 `144`。
+
+相比此前的 2GPU batch36 accum2 版本，该配置同时对齐了优化 batch 和 InfoNCE 负样本数。
+
 ## 实验背景
 
 完整 ImageNet 作者设置训练已经完成，最终 checkpoint 为：

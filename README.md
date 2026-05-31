@@ -12,6 +12,7 @@
 - 支持 AMP、checkpoint 保存/恢复、DDP 多卡训练。
 - 支持 VOC2012 零样本语义分割评估。
 - 支持 SCLIP 风格 self-correlation dense inference。
+- 支持 DDP 下 GLD/GGD 跨 GPU all-gather 负样本。
 - 保留轻量级实验结果和可复现实验配置。
 
 ## 项目结构
@@ -197,6 +198,30 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2.yaml
 | SCLIP 风格 | QuickGELU ATAS epoch 6 | 0.5703 | 0.7024 | 0.7750 |
 
 表征漂移诊断显示，QuickGELU ATAS epoch 6 的 `mosaic_patch_cos_to_teacher_mean=-0.0393`，说明 student 的 mosaic patch token 与 teacher 几乎失去正相关。详细审计见 [作者参数 QuickGELU 复现实验审计](docs/作者参数QuickGELU复现实验审计.md)。
+
+### All-Gather Probe
+
+针对多卡训练中 InfoNCE 只使用本地负样本的问题，当前代码新增了：
+
+```yaml
+training:
+  gather_distributed_negatives: true
+```
+
+开启后，GLD/GGD 会在 DDP 进程间 `all_gather` teacher features，把负样本扩展到全局 batch。ImageNet-100x200 子集 probe 结果：
+
+| 设置 | 训练步数 | Vanilla mIoU | SCLIP mIoU | kNN Top-1 | Mosaic patch cosine | Patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| QuickGELU all-gather | 80 | 0.3615 | 0.6901 | 0.9083 | 0.0595 | 0.3762 |
+| QuickGELU semantic guard + all-gather | 160 | 0.3522 | 0.7410 | 0.9113 | 0.4667 | 0.0257 |
+
+该结果说明：跨 GPU 负样本和更强全局语义约束可以显著缓解 patch token 漂移。当前已启动更接近作者全局 batch 的完整 ImageNet 实验：
+
+```text
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
+```
+
+该配置使用 2 GPU、每卡 batch 72、all-gather 负样本，使单步全局负样本数和等效优化 batch 都为 144。
 
 ### 完整 ImageNet checkpoint 的 VOC2012 评估
 

@@ -35,7 +35,16 @@ gradient_accumulation_steps = 2
 quick_gelu = true
 ```
 
-该配置使用 2 卡 DDP 加梯度累积，等效优化 batch 为 `36 x 2 x 2 = 144`。需要注意：当前 InfoNCE 负样本仍来自每个 DDP 进程的本地 batch，梯度累积不会扩大单次对比学习的负样本集合。
+该配置使用 2 卡 DDP 加梯度累积，等效优化 batch 为 `36 x 2 x 2 = 144`。需要注意：这个历史实验的 InfoNCE 负样本仍来自每个 DDP 进程的本地 batch，梯度累积不会扩大单次对比学习的负样本集合。
+
+后续代码已新增跨 GPU 负样本支持：
+
+```yaml
+training:
+  gather_distributed_negatives: true
+```
+
+启用后，GLD/GGD 会在 DDP 进程间 `all_gather` teacher features，使 student query 与全局 batch 的 teacher keys 对比。
 
 ## 1. 总体训练流程
 
@@ -189,6 +198,8 @@ return F.cross_entropy(logits, targets)
 ```
 
 因此正样本是同一图像或同一 mosaic cell 对应的 teacher CLS，负样本是 batch 内其他 teacher CLS。
+
+在 `gather_distributed_negatives=true` 时，负样本来自所有 DDP rank 的 teacher CLS。当前实现仍只对本 rank 的 student query 计算 loss，但 logits 的列扩展为全局 teacher batch，target offset 根据 `rank * local_batch` 修正。
 
 ## 3. LLD：局部到局部蒸馏
 
@@ -349,7 +360,7 @@ outputs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2/checkpoint_epoch_6.
 1. OpenCLIP 与作者使用的 CLIP 权重或 forward 细节不完全一致。
 2. `960x960` mosaic 下的 positional embedding resize 方式可能与作者不同。
 3. LLD 使用 `max_lld_patches=1024` 采样近似，而非完整 patch-patch 矩阵。
-4. 多卡训练中 GLD/GGD 的 InfoNCE 负样本没有跨 GPU `all_gather`，如果作者使用全局 batch 负样本，则当前实现的对比学习强度不足。
+4. 历史完整实验没有跨 GPU `all_gather` 负样本；当前代码已补充该功能，正在运行 batch72 all-gather 的完整 ImageNet 实验。
 5. 当前训练没有显式 warmup/cosine 学习率调度；如果作者实现包含 scheduler，这会造成训练动力学差异。
 6. 本项目的 VOC vanilla/SCLIP 评估是轻量复现，不等同于作者完整 dense prediction pipeline。
 7. 论文未公开代码时，teacher/student token 具体取层、归一化位置、mosaic 细节仍可能存在隐含实现差异。
