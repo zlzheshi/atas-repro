@@ -69,14 +69,14 @@ training:
 
 结论：
 
-- 单独加入 all-gather 后，SCLIP mIoU 从完整作者参数 QuickGELU ATAS 的 `0.5703` 回升到 `0.6901`。
+- 在子集 probe 中单独加入 all-gather 后，SCLIP mIoU 从完整作者参数 QuickGELU ATAS 的 `0.5703` 回升到 `0.6901`。
 - semantic guard 与 all-gather 组合后，SCLIP mIoU 进一步达到 `0.7410`，已经接近 QuickGELU SCLIP baseline 的 `0.7650`。
 - 该组合同时把 mosaic patch pairwise MSE 降到 `0.0257`，说明 patch 结构被明显保留下来。
-- 这支持当前判断：复现失败的主要原因之一不是数据或评估本身，而是训练实现中缺少全局 batch 负样本，以及作者参数下局部迁移过强导致 patch token 漂移。
+- 这支持当前判断：作者参数下局部迁移过强导致 patch token 漂移，是复现失败的关键原因之一；全局 batch 负样本有帮助，但单独补齐并不足以解决完整训练的漂移。
 
-### 正在运行的完整实验
+### 完整 ImageNet b72 all-gather 结果
 
-为进一步对齐作者的全局 batch，我们启动了完整 ImageNet 训练：
+为进一步对齐作者的全局 batch，我们完成了完整 ImageNet 训练：
 
 ```text
 configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
@@ -92,6 +92,26 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 - 等效优化 batch 也是 `144`。
 
 相比此前的 2GPU batch36 accum2 版本，该配置同时对齐了优化 batch 和 InfoNCE 负样本数。
+
+评估结果：
+
+| Dense mode | Foreground mIoU | Pixel Acc | Mean Class Acc |
+| --- | ---: | ---: | ---: |
+| Vanilla | 0.3090 | 0.4699 | 0.5198 |
+| SCLIP 风格 | 0.5817 | 0.7011 | 0.7803 |
+
+表征漂移诊断：
+
+| 模型 | CLS cosine | Global patch cosine | Mosaic patch cosine | Mosaic patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: |
+| QuickGELU baseline | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+| QuickGELU b72 all-gather epoch 6 | 0.6876 | 0.5388 | -0.0513 | 0.4838 |
+
+结论：
+
+- b72 all-gather 完整训练的 SCLIP mIoU 为 `0.5817`，只比此前 batch36 accum2 的 `0.5703` 略高，仍明显低于 QuickGELU baseline `0.7650`。
+- all-gather 补齐了全局负样本，但没有解决作者参数下的 patch token 漂移。
+- 下一步不应继续原样加长作者参数训练；更合理的是把子集上有效的 semantic guard 或更强 LLD/学习率调度扩展到完整 ImageNet，并在报告中明确这属于改进复现而非严格作者参数复现。
 
 ## 实验背景
 

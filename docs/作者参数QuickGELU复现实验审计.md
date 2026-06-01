@@ -253,14 +253,30 @@ training:
 
 结论：
 
-- all-gather 明显改善结果，说明“本地负样本不足”确实是关键实现差异。
+- all-gather 在子集 probe 中明显改善结果，说明“本地负样本不足”是一个重要实现差异。
 - semantic guard 与 all-gather 组合最稳定，SCLIP mIoU 达到 `0.7410`，距离 QuickGELU SCLIP baseline `0.7650` 已经较近。
 - 但 semantic guard 修改了作者给出的损失权重，因此它更适合作为诊断和改进方向，而不是作者参数完全复现结果。
 
+### 完整 ImageNet b72 all-gather 结果
+
+`configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml` 已完成 6 epoch 训练。该配置使用 2GPU、每卡 batch72，使全局负样本数和等效优化 batch 都为 144。
+
+| Dense mode | Foreground mIoU | Pixel Acc | Mean Class Acc |
+| --- | ---: | ---: | ---: |
+| Vanilla | 0.3090 | 0.4699 | 0.5198 |
+| SCLIP 风格 | 0.5817 | 0.7011 | 0.7803 |
+
+| 模型 | CLS cosine | Global patch cosine | Mosaic patch cosine | Mosaic patch pairwise MSE |
+| --- | ---: | ---: | ---: | ---: |
+| QuickGELU baseline | 1.0000 | 1.0000 | 1.0000 | 0.0000 |
+| QuickGELU b72 all-gather epoch 6 | 0.6876 | 0.5388 | -0.0513 | 0.4838 |
+
+该结果说明：补齐全局负样本后，完整作者参数训练仍没有接近作者宣称效果。SCLIP mIoU 只从 `0.5703` 小幅提升到 `0.5817`，mosaic patch cosine 仍为负值，核心问题仍是 patch token 漂移。
+
 ### 后续优先级
 
-1. **完整 ImageNet all-gather 作者参数训练**：当前已启动 `configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml`，它使用 2GPU、每卡 batch72，使全局负样本数和等效优化 batch 都为 144。
+1. **完整 ImageNet semantic guard + all-gather**：把子集上有效的 semantic guard 组合扩展到完整 ImageNet，但报告中必须标注它已经不是作者原始参数。
 2. **LLD 约束强度**：验证完整 patch-patch 或更稳定采样策略，确认 `lambda_lld=0.01` 下是否足以保留 patch 结构。
 3. **学习率调度**：当前训练没有显式 warmup/cosine scheduler；如果作者实现使用 scheduler，需要补齐。
 4. **官方 dense evaluation**：接入更接近作者的 MaskCLIP/SCLIP 评估实现，避免评估管线差异掩盖训练效果。
-5. **完整 ImageNet semantic guard + all-gather**：如果作者参数 all-gather 仍不达标，再考虑把 probe 中有效的 semantic guard 组合扩展到完整 ImageNet，但报告中必须标注它已经不是作者原始参数。
+5. **复现报告表述**：严格作者参数复现目前未达标，应把 all-gather、semantic guard 等结果作为失败诊断和改进路线，而不是声称已经复现论文指标。

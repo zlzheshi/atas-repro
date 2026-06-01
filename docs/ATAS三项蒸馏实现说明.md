@@ -360,7 +360,7 @@ outputs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2/checkpoint_epoch_6.
 1. OpenCLIP 与作者使用的 CLIP 权重或 forward 细节不完全一致。
 2. `960x960` mosaic 下的 positional embedding resize 方式可能与作者不同。
 3. LLD 使用 `max_lld_patches=1024` 采样近似，而非完整 patch-patch 矩阵。
-4. 历史完整实验没有跨 GPU `all_gather` 负样本；当前代码已补充该功能，正在运行 batch72 all-gather 的完整 ImageNet 实验。
+4. 历史完整实验没有跨 GPU `all_gather` 负样本；当前代码已补充该功能，batch72 all-gather 完整 ImageNet 实验已经完成，但仍未解决 patch token 漂移。
 5. 当前训练没有显式 warmup/cosine 学习率调度；如果作者实现包含 scheduler，这会造成训练动力学差异。
 6. 本项目的 VOC vanilla/SCLIP 评估是轻量复现，不等同于作者完整 dense prediction pipeline。
 7. 论文未公开代码时，teacher/student token 具体取层、归一化位置、mosaic 细节仍可能存在隐含实现差异。

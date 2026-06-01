@@ -194,8 +194,10 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2.yaml
 | --- | --- | ---: | ---: | ---: |
 | Vanilla | QuickGELU CLIP baseline | 0.3604 | 0.5191 | 0.5111 |
 | Vanilla | QuickGELU ATAS epoch 6 | 0.3111 | 0.4729 | 0.5240 |
+| Vanilla | QuickGELU ATAS b72 all-gather epoch 6 | 0.3090 | 0.4699 | 0.5198 |
 | SCLIP 风格 | QuickGELU CLIP baseline | 0.7650 | 0.8602 | 0.8790 |
 | SCLIP 风格 | QuickGELU ATAS epoch 6 | 0.5703 | 0.7024 | 0.7750 |
+| SCLIP 风格 | QuickGELU ATAS b72 all-gather epoch 6 | 0.5817 | 0.7011 | 0.7803 |
 
 表征漂移诊断显示，QuickGELU ATAS epoch 6 的 `mosaic_patch_cos_to_teacher_mean=-0.0393`，说明 student 的 mosaic patch token 与 teacher 几乎失去正相关。详细审计见 [作者参数 QuickGELU 复现实验审计](docs/作者参数QuickGELU复现实验审计.md)。
 
@@ -215,13 +217,13 @@ training:
 | QuickGELU all-gather | 80 | 0.3615 | 0.6901 | 0.9083 | 0.0595 | 0.3762 |
 | QuickGELU semantic guard + all-gather | 160 | 0.3522 | 0.7410 | 0.9113 | 0.4667 | 0.0257 |
 
-该结果说明：跨 GPU 负样本和更强全局语义约束可以显著缓解 patch token 漂移。当前已启动更接近作者全局 batch 的完整 ImageNet 实验：
+子集 probe 说明：跨 GPU 负样本和更强全局语义约束可以显著缓解 patch token 漂移。更接近作者全局 batch 的完整 ImageNet 实验已经完成：
 
 ```text
 configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 ```
 
-该配置使用 2 GPU、每卡 batch 72、all-gather 负样本，使单步全局负样本数和等效优化 batch 都为 144。
+该配置使用 2 GPU、每卡 batch 72、all-gather 负样本，使单步全局负样本数和等效优化 batch 都为 144。完整训练结果为 Vanilla mIoU `0.3090`、SCLIP mIoU `0.5817`，仍显著低于 QuickGELU baseline 的 `0.7650`。表征诊断中 `mosaic_patch_cos_to_teacher_mean=-0.0513`、`mosaic_patch_pairwise_mse=0.4838`，说明作者参数下 patch token 漂移仍未解决。
 
 ### 完整 ImageNet checkpoint 的 VOC2012 评估
 
