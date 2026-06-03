@@ -34,13 +34,9 @@ runs/
 wandb/
 tensorboard/
 
-# Bulky training output directories. Lightweight metric JSON/CSV/PNG outputs
-# already copied into outputs/ remain tracked unless they match the patterns above.
-outputs/atas_*/
-outputs/**/confusion.pt
-outputs/voc_*sweep*/**/visualizations/
-outputs/voc_maskclip_subset_100x200/**/visualizations/
-outputs/voc_sclip_*/**/visualizations/
+# Training and evaluation outputs are local runtime artifacts.
+# Final metrics are summarized in README.md and docs/.
+outputs/
 
 # OS and editor files
 .DS_Store

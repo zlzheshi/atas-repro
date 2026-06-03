@@ -53,12 +53,14 @@ training:
 
 开启后，GLD/GGD 在 DDP 进程间收集 teacher features。这样每张卡上的 student query 不再只和本地 teacher batch 对比，而是和全局 teacher batch 对比。
 
-### Probe 配置
+### 历史 Probe 设置
 
-| 配置 | 说明 |
+这些 probe 用于定位问题，相关中间配置已从最终精简仓库中移除，结果保留在本文档中：
+
+| 设置 | 说明 |
 | --- | --- |
-| `configs/atas_vitb_subset_100x200_quickgelu_allgather_probe.yaml` | QuickGELU，作者损失权重，80 steps，2GPU all-gather |
-| `configs/atas_vitb_subset_100x200_quickgelu_semantic_guard_allgather_probe.yaml` | QuickGELU，保守语义约束，160 steps，2GPU all-gather |
+| QuickGELU all-gather probe | QuickGELU，作者损失权重，80 steps，2GPU all-gather |
+| QuickGELU semantic guard + all-gather probe | QuickGELU，保守语义约束，160 steps，2GPU all-gather |
 
 ### Probe 结果
 
@@ -130,17 +132,7 @@ outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt
 
 ## Vanilla VOC2012 评估
 
-运行脚本：
-
-```bash
-GPU=0 bash scripts/run_voc_full_author_sweep.sh
-```
-
-结果目录：
-
-```text
-outputs/voc_full_author_sweep/
-```
+该部分为历史评估结果。最终精简仓库不再保留 sweep 过程脚本和本地 `outputs/` 文件，复跑时请使用 `scripts/evaluate_voc_zero_shot_seg.py` 或最终 post-eval 脚本。
 
 | 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
 | --- | ---: | ---: | ---: |
@@ -160,17 +152,7 @@ outputs/voc_full_author_sweep/
 
 ## SCLIP 风格 VOC2012 评估
 
-运行脚本：
-
-```bash
-GPU=0 bash scripts/run_voc_sclip_eval.sh
-```
-
-结果目录：
-
-```text
-outputs/voc_sclip_full_author/
-```
+该部分为历史 SCLIP 风格评估结果。最终精简仓库不再保留 sweep 过程脚本和本地 `outputs/` 文件。
 
 | 模型 | 前景 mIoU | 前景像素准确率 | 平均类别准确率 |
 | --- | ---: | ---: | ---: |
@@ -187,11 +169,7 @@ outputs/voc_sclip_full_author/
 
 ## Semantic Guard Probe
 
-为排查 ATAS checkpoint 下游下降的原因，我们补充了一组保护语义的子集 probe：
-
-```text
-configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
-```
+为排查 ATAS checkpoint 下游下降的原因，我们曾补充一组保护语义的子集 probe。相关中间配置已从最终精简仓库中移除，关键结果保留如下。
 
 该配置相对作者设置做了保守调整：
 
@@ -202,18 +180,6 @@ configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
 - 在 ImageNet-100x200 子集上训练 160 steps。
 
 ### 表征漂移诊断
-
-诊断脚本：
-
-```bash
-python scripts/diagnose_checkpoint_drift.py \
-  --config configs/atas_vitb_subset_100x200_stable.yaml \
-  --data-root /mnt/t1b6/xuzhejia/datasets/imagenet_subset_100x200/train \
-  --checkpoint full_epoch1=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_1.pt \
-  --checkpoint full_epoch6=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt \
-  --checkpoint semantic_guard_probe=outputs/atas_vitb_subset_100x200_semantic_guard_probe/checkpoint_epoch_1.pt \
-  --output-dir outputs/checkpoint_drift_full_author_subset_after_probe
-```
 
 关键结果：
 

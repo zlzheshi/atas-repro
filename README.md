@@ -13,7 +13,7 @@
 - 支持 VOC2012 零样本语义分割评估。
 - 支持 SCLIP 风格 self-correlation dense inference。
 - 支持 DDP 下 GLD/GGD 跨 GPU all-gather 负样本。
-- 保留轻量级实验结果和可复现实验配置。
+- 保留最终实验结论文档和可复现实验配置。
 
 ## 项目结构
 
@@ -21,13 +21,12 @@
 configs/                 训练配置文件
 scripts/                 数据准备、训练、评估和可视化脚本
 src/                     项目公共模块
-outputs/                 轻量级指标结果和部分可视化结果
 docs/                    课程汇报、服务器运行指南和实验结果记录
 train_atas.py            ATAS 训练入口
 requirements.txt         Python 依赖
 ```
 
-大型数据集、模型权重和训练 checkpoint 不提交到 git。
+大型数据集、模型权重、训练 checkpoint 和评估输出不提交到 git。
 
 ## 环境安装
 
@@ -86,83 +85,67 @@ python train_atas.py \
 
 ### 完整 ImageNet 训练
 
-主要配置文件：
+本仓库最终保留两个完整训练配置：
 
 ```text
-configs/atas_vitb_imagenet_full_author.yaml
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_accum2.yaml
+configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 ```
 
-该配置使用 ViT-B/16，训练 6 个 epoch，batch size 为每卡 36，优化器为 AdamW，学习率 `1e-5`，权重衰减 `0.1`，损失权重为 `GLD=1`、`LLD=0.01`、`GGD=1`。
+二者都使用 OpenAI CLIP ViT-B/16、QuickGELU、完整 ImageNet、6 epochs、AdamW、学习率 `1e-5`、权重衰减 `0.1`，损失权重为 `GLD=1`、`LLD=0.01`、`GGD=1`。`b72_allgather` 是最终对齐全局负样本的版本。
 
-4 卡 DDP 训练命令：
+实验室服务器上可使用等待空闲 GPU 的最终启动脚本：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 PYTHONPATH=. \
+bash scripts/run_full_imagenet_author_quickgelu_2gpu_b72_allgather_wait.sh
+```
+
+手动 2 卡启动：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=. \
 python -m torch.distributed.run \
   --standalone \
-  --nproc_per_node=4 \
+  --nproc_per_node=2 \
   train_atas.py \
-  --config configs/atas_vitb_imagenet_full_author.yaml \
+  --config configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml \
   --data-root /path/to/imagenet/train
 ```
 
-从 checkpoint 恢复：
+从 checkpoint 恢复时增加 `--resume`：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 PYTHONPATH=. \
-python -m torch.distributed.run \
-  --standalone \
-  --nproc_per_node=4 \
-  train_atas.py \
-  --config configs/atas_vitb_imagenet_full_author.yaml \
-  --data-root /path/to/imagenet/train \
-  --resume outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_5.pt
-```
-
-实验室服务器上可使用等待空闲 GPU 的启动脚本：
-
-```bash
-bash scripts/run_full_imagenet_author_wait.sh
+--resume outputs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather/checkpoint_epoch_5.pt
 ```
 
 ## 评估
 
-### VOC2012 Vanilla Patch Matching
+训练完成后可直接使用最终自动评估脚本：
 
 ```bash
-GPU=0 \
-VOC_ROOT=/path/to/VOCdevkit/VOC2012 \
-bash scripts/run_voc_full_author_sweep.sh
+bash scripts/run_full_author_quickgelu_2gpu_b72_allgather_post_eval.sh
 ```
 
-输出目录：
-
-```text
-outputs/voc_full_author_sweep/
-```
-
-### VOC2012 SCLIP 风格评估
+也可以手动调用核心评估脚本。Vanilla patch matching：
 
 ```bash
-GPU=0 \
-VOC_ROOT=/path/to/VOCdevkit/VOC2012 \
-bash scripts/run_voc_sclip_eval.sh
+python scripts/evaluate_voc_zero_shot_seg.py \
+  --config configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml \
+  --voc-root /path/to/VOCdevkit/VOC2012 \
+  --checkpoint /path/to/checkpoint_epoch_6.pt \
+  --dense-mode vanilla \
+  --output-dir outputs/voc_final_vanilla
 ```
 
-输出目录：
-
-```text
-outputs/voc_sclip_full_author/
-```
-
-### ImageNet 子集 kNN 评估
+SCLIP 风格评估：
 
 ```bash
-python scripts/evaluate_imagenet_subset_knn.py \
-  --config configs/atas_vitb_subset_100x200_stable.yaml \
-  --data-root /path/to/imagenet_subset_100x200/train \
-  --checkpoint outputs/atas_vitb_subset_100x200_stable/checkpoint_epoch_6.pt \
-  --output-dir outputs/eval_subset_100x200_epoch6_knn
+python scripts/evaluate_voc_zero_shot_seg.py \
+  --config configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml \
+  --voc-root /path/to/VOCdevkit/VOC2012 \
+  --checkpoint /path/to/checkpoint_epoch_6.pt \
+  --dense-mode sclip \
+  --output-dir outputs/voc_final_sclip
 ```
 
 ### Checkpoint 表征漂移诊断
@@ -171,11 +154,10 @@ python scripts/evaluate_imagenet_subset_knn.py \
 
 ```bash
 python scripts/diagnose_checkpoint_drift.py \
-  --config configs/atas_vitb_subset_100x200_stable.yaml \
-  --data-root /path/to/imagenet_subset_100x200/train \
-  --checkpoint epoch1=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_1.pt \
-  --checkpoint epoch6=outputs/atas_vitb_imagenet_full_author/checkpoint_epoch_6.pt \
-  --output-dir outputs/checkpoint_drift_full_author_subset
+  --config configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml \
+  --data-root /path/to/imagenet/train \
+  --checkpoint epoch6=/path/to/checkpoint_epoch_6.pt \
+  --output-dir outputs/checkpoint_drift_final
 ```
 
 ## 实验结果
@@ -240,13 +222,7 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 
 ### Semantic Guard 子集 Probe
 
-为减少 ATAS 训练对 CLIP 局部表征的破坏，仓库补充了一个保守消融配置：
-
-```text
-configs/atas_vitb_subset_100x200_semantic_guard_probe.yaml
-```
-
-该 probe 在 ImageNet-100x200 子集上训练 160 steps。相比完整 ATAS epoch 6，它显著降低 patch token 漂移，并把 VOC2012 结果从 `0.3029/0.4244` 回升到：
+过程中曾验证 semantic guard probe：在 ImageNet-100x200 子集上训练 160 steps。相比完整 ATAS epoch 6，它显著降低 patch token 漂移，并把 VOC2012 结果从 `0.3029/0.4244` 回升到：
 
 | 设置 | Foreground mIoU | Pixel Acc | Mean Class Acc |
 | --- | ---: | ---: | ---: |
