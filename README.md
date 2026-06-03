@@ -231,6 +231,10 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 
 该 probe 仍未超过 OpenCLIP baseline，但说明后续改进应优先控制 patch 表征漂移。
 
+### 消融实验
+
+已补充 GLD、LLD、GGD 和 all-gather 消融实验。关键结论：`no_ggd` 几乎崩溃，说明 GGD 是保留 CLIP 全局语义的必要项；`no_gld` 的 patch drift 最小且 SCLIP 最接近 baseline，说明当前严格作者参数下 GLD 是造成局部 token 漂移的主要压力源。完整设计和结果见 [消融实验方案](docs/消融实验方案.md)。
+
 ## 当前复现差距
 
 论文报告 ATAS 训练后 VOC20 等下游任务有提升。本仓库当前在已实现的 VOC2012 vanilla 和 SCLIP 风格评估中，ATAS checkpoint 尚未超过 OpenCLIP baseline。
