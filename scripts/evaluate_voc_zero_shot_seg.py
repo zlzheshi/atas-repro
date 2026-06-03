@@ -1,5 +1,17 @@
 from __future__ import annotations
 
+"""Zero-shot VOC2012 dense prediction evaluator.
+
+该脚本不训练模型，只评估 CLIP/ATAS visual encoder 的 dense patch features：
+
+- vanilla: 直接使用 ViT 最后一层输出的 patch tokens；
+- maskclip: 使用最后一层 self-attention 的 value branch 近似 MaskCLIP 特征；
+- sclip: 使用 self-correlation attention 近似 SCLIP dense inference。
+
+评估方式是开放词汇分割常见的 patch-text matching：每个 patch feature 与
+VOC 类别文本 feature 做余弦相似度，得到 patch-level 类别，再上采样到像素级。
+"""
+
 import argparse
 import csv
 import json
@@ -109,6 +121,11 @@ def load_model(config: dict, checkpoint: str | None, device: torch.device) -> nn
 
 @torch.no_grad()
 def encode_text_features(model: nn.Module, device: torch.device) -> torch.Tensor:
+    """Encode VOC class names with multiple CLIP prompt templates.
+
+    直接用单个类别词会比较不稳定，因此为每个类别构造多条 prompt，编码后
+    先归一化再平均，得到该类别的文本原型。
+    """
     templates = [
         "a photo of a {}.",
         "a photo of the {}.",
@@ -128,6 +145,7 @@ def encode_text_features(model: nn.Module, device: torch.device) -> torch.Tensor
 
 
 def preprocess_pair(image_path: Path, mask_path: Path, image_size: int) -> tuple[torch.Tensor, torch.Tensor, Image.Image]:
+    """Load one VOC image/mask pair and resize both to the evaluation size."""
     image = Image.open(image_path).convert("RGB")
     mask = Image.open(mask_path)
 
@@ -190,6 +208,12 @@ def apply_layer_scale(block: nn.Module, name: str, x: torch.Tensor) -> torch.Ten
 
 
 def self_correlation_attention(block: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """SCLIP-style self-correlation attention for the last ViT block.
+
+    标准 attention 是 QK^T 对 V 加权。SCLIP 的核心思想是用 Q-Q 和 K-K
+    的自相关矩阵强化 dense patch 对齐。本实现保留 OpenCLIP 权重，只替换
+    最后一层 attention 的计算方式，因此适合做轻量复现评估。
+    """
     attn = block.attn
     qkv = F.linear(x, attn.in_proj_weight, attn.in_proj_bias)
     q, k, v = qkv.chunk(3, dim=-1)
@@ -260,6 +284,15 @@ def predict_mask(
     temperature: float,
     dense_mode: str,
 ) -> torch.Tensor:
+    """Predict a VOC foreground class id for each pixel.
+
+    预测流程：
+    1. 根据 dense_mode 提取 patch features；
+    2. patch features 与 VOC text features 做相似度匹配；
+    3. 将 patch logits reshape 成二维网格；
+    4. 双线性上采样到输入图像大小；
+    5. argmax 得到类别。VOC mask 中 0 是背景，这里预测类别从 1 开始。
+    """
     image = image.unsqueeze(0).to(device)
     if dense_mode == "maskclip":
         patches = encode_maskclip_value_tokens(model.visual, image)
@@ -278,6 +311,11 @@ def predict_mask(
 
 
 def update_confusion(confusion: torch.Tensor, pred: torch.Tensor, target: torch.Tensor) -> None:
+    """Accumulate foreground-only confusion matrix.
+
+    VOC 的 0 是背景、255 是 ignore。本复现聚焦 foreground mIoU，因此只统计
+    1..20 的前景类别像素。
+    """
     valid = (target >= 1) & (target <= len(VOC_CLASSES))
     pred = pred[valid] - 1
     target = target[valid] - 1
@@ -289,6 +327,7 @@ def update_confusion(confusion: torch.Tensor, pred: torch.Tensor, target: torch.
 
 
 def compute_metrics(confusion: torch.Tensor) -> dict[str, object]:
+    """Compute mIoU and accuracy from the accumulated confusion matrix."""
     confusion = confusion.float()
     tp = confusion.diag()
     row_sum = confusion.sum(dim=1)
@@ -340,6 +379,7 @@ def palette_mask(mask: torch.Tensor) -> Image.Image:
 
 
 def save_visualization(output_dir: Path, image_id: str, display: Image.Image, pred: torch.Tensor, target: torch.Tensor) -> None:
+    """Save image / ground truth / prediction / overlay panels for qualitative inspection."""
     pred_img = palette_mask(pred)
     target_img = palette_mask(target)
     overlay = Image.blend(display, pred_img, alpha=0.45)

@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+"""ATAS training entrypoint.
+
+训练逻辑围绕冻结 teacher CLIP 和可训练 student CLIP：
+
+1. 对原始单图做 224x224 编码，得到 teacher/student 的 CLS token；
+2. 对 mosaic 大图做 960x960 编码，得到 teacher/student 的 dense patch token；
+3. 用 `atas_region_loss` 计算 GLD、LLD、GGD 三项损失；
+4. 只更新 student visual encoder，teacher 始终冻结。
+
+本文件刻意显式展开 OpenCLIP ViT 的 token 提取过程，而不是直接调用
+`model.encode_image`，因为 ATAS 同时需要 CLS token 和所有 patch token。
+"""
+
 import argparse
 import copy
 import math
@@ -26,6 +39,12 @@ from src.atas.mosaic import build_mosaic, choose_mosaic_grid
 
 
 class ImagePathFolder(Dataset):
+    """ImageFolder wrapper that returns image paths instead of labels.
+
+    ATAS 是自蒸馏训练，不使用 ImageNet 类别标签。仍然复用 `ImageFolder`
+    是因为 ImageNet 目录已经按类别组织，PyTorch 可以稳定地枚举所有图像。
+    """
+
     def __init__(self, root: str) -> None:
         self.dataset = ImageFolder(root=root)
 
@@ -37,6 +56,18 @@ class ImagePathFolder(Dataset):
 
 
 class MosaicBatchCollator:
+    """Build the paired global/mosaic batch consumed by ATAS.
+
+    Dataloader 传入的是若干图片路径；collator 会同时构造两种视图：
+
+    - `global_images`: 每张原图 resize 到 `global_image_size`，用于 CLS token；
+    - `mosaic_images`: 多张图拼成一张 `mosaic_image_size` 大图，用于 patch token；
+    - `region_boxes`: 每个 source image 在 mosaic patch grid 中的位置。
+
+    这种设计让 GLD 可以把每个 mosaic cell 的局部表示对齐到它自己的
+    teacher CLS，而不是把整张 mosaic 当成一个语义类别。
+    """
+
     def __init__(
         self,
         global_image_size: int,
@@ -103,6 +134,9 @@ class MosaicBatchCollator:
             for local_index in range(images_per_mosaic):
                 source_index = (start + local_index) % len(images)
                 row, col = divmod(local_index, grid)
+                # region_boxes 前 5 列是 patch-grid 坐标：
+                # [mosaic_id, row_start, row_end, col_start, col_end]。
+                # 最后一列 source_index 指回 global_images 中对应的单图 CLS token。
                 region_boxes.append(
                     [
                         mosaic_index,
@@ -139,6 +173,12 @@ def load_config(path: str) -> dict:
 
 
 def resize_positional_embedding(positional_embedding: torch.Tensor, grid_size: tuple[int, int]) -> torch.Tensor:
+    """Resize OpenCLIP ViT positional embedding for non-224 inputs.
+
+    ViT-B/16 的预训练位置编码通常对应 14x14 patch grid。ATAS mosaic 输入
+    使用 960x960，即 60x60 patch grid，因此需要 bicubic interpolation。
+    CLS 位置编码不参与插值，只插值 patch 位置编码。
+    """
     cls_pos = positional_embedding[:1]
     patch_pos = positional_embedding[1:]
     old_size = int(math.sqrt(patch_pos.shape[0]))
@@ -161,11 +201,14 @@ def encode_visual_tokens(visual: nn.Module, images: torch.Tensor) -> tuple[torch
     ATAS losses can consume both global and local representations.
     """
     visual = unwrap_visual(visual)
+    # OpenCLIP ViT 的第一步是 patchify：conv1 的 kernel/stride 等于 patch size。
+    # 输出形状从 [B, C, H, W] 变为 [B, width, grid_h, grid_w]。
     x = visual.conv1(images)
     grid_size = (x.shape[2], x.shape[3])
     x = x.reshape(x.shape[0], x.shape[1], -1)
     x = x.permute(0, 2, 1)
 
+    # 手动拼接 CLS token，并按当前输入分辨率重采样 positional embedding。
     cls_embedding = visual.class_embedding.to(x.dtype)
     cls_tokens = cls_embedding + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)
     x = torch.cat([cls_tokens, x], dim=1)
@@ -174,6 +217,7 @@ def encode_visual_tokens(visual: nn.Module, images: torch.Tensor) -> tuple[torch
     if hasattr(visual, "patch_dropout"):
         x = visual.patch_dropout(x)
 
+    # 保持 OpenCLIP 的 forward 顺序：pre-LN -> transformer -> post-LN -> projection。
     x = visual.ln_pre(x)
     x = visual.transformer(x)
     x = visual.ln_post(x)
@@ -207,6 +251,7 @@ def unwrap_encoder(encoder: nn.Module) -> CLIPVisualTokenEncoder:
 
 
 def init_distributed() -> tuple[bool, int, int, int]:
+    """Initialize torch.distributed when launched by torchrun."""
     if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
         return False, 0, 1, 0
 
@@ -229,6 +274,7 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer,
     scaler: torch.cuda.amp.GradScaler,
 ) -> int:
+    """Restore student visual encoder, optimizer and AMP scaler from checkpoint."""
     checkpoint = torch.load(path, map_location="cpu")
     visual_state = checkpoint.get("visual_state_dict", checkpoint.get("model", checkpoint))
     unwrap_visual(unwrap_encoder(student_encoder).visual).load_state_dict(visual_state, strict=False)
@@ -256,6 +302,8 @@ def main() -> None:
         pretrained=pretrained,
         force_quick_gelu=force_quick_gelu,
     )
+    # teacher 是 student 初始化权重的冻结副本。训练只更新 student visual encoder；
+    # teacher 始终提供稳定的 CLIP 语义目标。
     teacher = copy.deepcopy(student)
     teacher.eval()
 
@@ -327,10 +375,14 @@ def main() -> None:
             source_indices = region_data[:, 5]
 
             with torch.no_grad():
+                # teacher_global_cls: 原始单图的全局语义。
+                # teacher_mosaic_patches: mosaic 大图的局部结构参照。
                 teacher_global_cls, _ = teacher_encoder(global_images)
                 _, teacher_mosaic_patches = teacher_encoder(mosaic_images)
 
             with torch.cuda.amp.autocast(enabled=use_amp):
+                # student 同时看原始单图和 mosaic 图。GLD 使用 source_indices 把
+                # 每个 mosaic cell 对应回自己的 teacher CLS token。
                 student_global_cls, _ = student_encoder(global_images)
                 _, student_mosaic_patches = student_encoder(mosaic_images)
                 loss, metrics = atas_region_loss(

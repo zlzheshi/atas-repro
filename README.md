@@ -250,6 +250,7 @@ configs/atas_vitb_imagenet_full_author_quickgelu_2gpu_b72_allgather.yaml
 - [完整 ImageNet VOC 评估结果](docs/完整ImageNet_VOC评估结果.md)
 - [ATAS 三项蒸馏实现说明](docs/ATAS三项蒸馏实现说明.md)
 - [作者参数 QuickGELU 复现实验审计](docs/作者参数QuickGELU复现实验审计.md)
+- [消融实验方案](docs/消融实验方案.md)
 
 ## 引用
 

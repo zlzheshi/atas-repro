@@ -1,5 +1,19 @@
 from __future__ import annotations
 
+"""Diagnose representation drift between ATAS checkpoints and the frozen CLIP teacher.
+
+VOC mIoU 下降本身只能说明下游效果不好，不能解释原因。本脚本从表征角度
+量化 student 是否偏离 teacher：
+
+- CLS cosine：全局图像语义是否仍接近 CLIP teacher；
+- global/mosaic patch cosine：局部 patch token 是否仍接近 teacher；
+- pairwise MSE：patch-patch 相似度结构是否被破坏；
+- GLD/LLD/GGD loss：当前 checkpoint 在 ATAS 训练目标下的残余损失。
+
+这些指标用于支撑文档中的结论：作者参数下的主要问题是 mosaic patch token
+漂移，而不仅仅是 VOC 评估代码差异。
+"""
+
 import argparse
 import copy
 import csv
@@ -53,6 +67,8 @@ def parse_checkpoint_spec(spec: str) -> tuple[str, Path]:
 
 
 class MetricStore:
+    """Small accumulator for scalar metrics collected over several batches."""
+
     def __init__(self) -> None:
         self.values: dict[str, list[float]] = {}
 
@@ -83,6 +99,7 @@ def load_visual_checkpoint(student: nn.Module, checkpoint_path: Path) -> tuple[i
 
 
 def pairwise_cosine_mse(student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
+    """Compare patch-patch relational structure with mean squared error."""
     student = F.normalize(student.float(), dim=-1)
     teacher = F.normalize(teacher.float(), dim=-1)
     student_rel = student @ student.t()
@@ -96,6 +113,7 @@ def sample_patch_tokens(
     max_patches: int,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Subsample patch tokens before pairwise comparison to keep memory bounded."""
     student_flat = student_patches.reshape(-1, student_patches.shape[-1])
     teacher_flat = teacher_patches.reshape(-1, teacher_patches.shape[-1])
     if student_flat.shape[0] <= max_patches:
@@ -105,6 +123,7 @@ def sample_patch_tokens(
 
 
 def make_loader(config: dict, args: argparse.Namespace) -> DataLoader:
+    """Build the same global/mosaic batch structure used during training."""
     dataset = ImagePathFolder(root=args.data_root)
     batch_size = args.batch_size or int(config["training"]["batch_size"])
     num_workers = args.num_workers
@@ -133,6 +152,7 @@ def evaluate_model(
     config: dict,
     args: argparse.Namespace,
 ) -> dict[str, float | str | int]:
+    """Evaluate one checkpoint against the frozen teacher on a few ImageNet batches."""
     device = torch.device(args.device)
     student_encoder = CLIPVisualTokenEncoder(student.visual).to(device).eval()
     store = MetricStore()
@@ -167,6 +187,8 @@ def evaluate_model(
             student_global_cls, student_global_patches = student_encoder(global_images)
             _, student_mosaic_patches = student_encoder(mosaic_images)
 
+            # Token-level cosine tells us whether individual CLS/patch features remain
+            # aligned with teacher features after ATAS training.
             cls_cos = F.cosine_similarity(student_global_cls.float(), teacher_global_cls.float(), dim=-1)
             global_patch_cos = F.cosine_similarity(
                 student_global_patches.reshape(-1, student_global_patches.shape[-1]).float(),
@@ -184,6 +206,8 @@ def evaluate_model(
                 args.max_pairwise_patches,
                 generator,
             )
+            # Recompute ATAS losses on the diagnostic batch. This is not used for
+            # optimization; it helps connect representation drift back to GLD/LLD/GGD.
             loss, metrics = atas_region_loss(
                 student_global_cls=student_global_cls,
                 student_mosaic_patches=student_mosaic_patches,
